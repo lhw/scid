@@ -64,6 +64,9 @@ func (s *Server) buildRouter() *chi.Mux {
 	// Status is intentionally public — returns {verified:false} when unauthenticated
 	// so the home page can load without a login.
 	r.Get("/api/verify/status", s.handleVerifyStatus)
+	// Signup token — public endpoint that creates a 1-use Pocket ID registration token.
+	// The frontend uses the token to redirect new users to Pocket ID's /signup page.
+	r.Post("/api/auth/signup-token", s.handleSignupToken)
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.bearerAuthMiddleware)

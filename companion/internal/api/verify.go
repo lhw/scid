@@ -126,7 +126,11 @@ func (s *Server) handleVerifyConfirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if time.Now().After(vt.ExpiresAt) {
+	if time.Now().UTC().After(vt.ExpiresAt.UTC()) {
+		slog.WarnContext(r.Context(), "verification token expired",
+			"user_id", user.ID,
+			"expires_at", vt.ExpiresAt.UTC(),
+			"now", time.Now().UTC())
 		writeError(w, http.StatusBadRequest, "verification token has expired; please start a new verification")
 		return
 	}
@@ -212,6 +216,7 @@ func (s *Server) completeVerification(
 // --- GET /api/verify/status ---
 
 type statusResponse struct {
+	Authenticated    bool       `json:"authenticated"`
 	Verified         bool       `json:"verified"`
 	Handle           string     `json:"handle,omitempty"`
 	VerifiedAt       string     `json:"verified_at,omitempty"`
@@ -233,7 +238,7 @@ func (s *Server) handleVerifyStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := statusResponse{}
+	resp := statusResponse{Authenticated: true}
 
 	pending, err := s.store.GetTokenByUserID(r.Context(), user.ID)
 	if err != nil && err != store.ErrNotFound {

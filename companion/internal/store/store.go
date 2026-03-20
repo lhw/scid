@@ -74,7 +74,7 @@ INSERT INTO verification_tokens (id, pocket_id_user_id, rsi_handle, token, expir
 VALUES (?, ?, ?, ?, ?)`
 	_, err = s.db.ExecContext(ctx, q,
 		vt.ID, vt.PocketIDUserID, vt.RSIHandle, vt.Token,
-		vt.ExpiresAt.UTC().Format(time.DateTime))
+		vt.ExpiresAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		return nil, fmt.Errorf("insert token: %w", err)
 	}
@@ -125,9 +125,18 @@ func scanToken(row *sql.Row) (*VerificationToken, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scan token: %w", err)
 	}
-	vt.CreatedAt, _ = time.Parse(time.DateTime, createdAt)
-	vt.ExpiresAt, _ = time.Parse(time.DateTime, expiresAt)
+	vt.CreatedAt, _ = parseTime(createdAt)
+	vt.ExpiresAt, _ = parseTime(expiresAt)
 	return &vt, nil
+}
+
+// parseTime parses a time string stored in SQLite, trying RFC3339 first (new
+// rows) and falling back to the SQLite datetime() format (legacy rows).
+func parseTime(s string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	return time.Parse(time.DateTime, s)
 }
 
 // ErrNotFound is returned when a requested record does not exist.

@@ -28,7 +28,7 @@ services:
     environment:
       LISTEN_ADDR: ":8080"
       DATABASE_PATH: /data/scid.db
-      POCKET_ID_INTERNAL_URL: http://pocket-id:3000
+      POCKET_ID_INTERNAL_URL: http://pocket-id:1411
       POCKET_ID_ADMIN_API_KEY: ${POCKET_ID_ADMIN_API_KEY}
     volumes:
       - companion-data:/data
@@ -47,6 +47,9 @@ services:
     environment:
       # Tell the Vite dev proxy where the companion lives inside the stack
       VITE_API_BASE: http://companion:8080
+      # OIDC client config baked into the SvelteKit bundle at build/dev time
+      PUBLIC_POCKET_ID_URL: https://id.scid.my
+      PUBLIC_OIDC_CLIENT_ID: 3f8bd72a-4ae6-4656-83cd-44f0f159b4d5
     volumes:
       - ./frontend:/app
       - frontend-node-modules:/app/node_modules

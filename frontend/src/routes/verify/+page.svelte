@@ -1,11 +1,36 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { untrack } from 'svelte';
-  import { startVerify, confirmVerify } from '$lib/utils/api.js';
-  import { CircleCheckBig, CircleX, Copy, Check, LoaderCircle } from '@lucide/svelte';
+  import { startVerify, confirmVerify, getSignupToken } from '$lib/utils/api.js';
+  import { getAccessToken, login } from '$lib/utils/auth.js';
+  import { CircleCheckBig, CircleX, Copy, Check, LoaderCircle, LogIn, UserPlus } from '@lucide/svelte';
   import type { PageData } from './$types';
+  import { PUBLIC_POCKET_ID_URL } from '$env/static/public';
 
   let { data }: { data: PageData } = $props();
+
+  // Show a login gate until we confirm there's a token in storage.
+  // Starts as null (unknown) then resolves to true/false in onMount.
+  let authenticated = $state<boolean | null>(null);
+  let registerLoading = $state(false);
+
+  onMount(() => {
+    authenticated = getAccessToken() !== null;
+    // If we already have a token but status says authenticated, use server signal too
+    if (!authenticated && data.status?.authenticated) authenticated = true;
+  });
+
+  async function startRegistration() {
+    registerLoading = true;
+    try {
+      const token = await getSignupToken();
+      window.location.href = `${PUBLIC_POCKET_ID_URL}/signup?token=${encodeURIComponent(token)}`;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not start registration. Try again.');
+      registerLoading = false;
+    }
+  }
 
   type Step = 'handle' | 'token' | 'confirming' | 'success' | 'failed';
 
@@ -127,7 +152,62 @@
 </script>
 
 <div class="flex flex-1 items-center justify-center px-4 py-16">
-  {#if data.status?.verified}
+  {#if authenticated === null}
+    <!-- Resolving auth state — brief flicker guard -->
+    <div></div>
+  {:else if !authenticated}
+    <!-- Login gate — new users create an account; returning users sign in -->
+    <div class="w-full max-w-lg space-y-4">
+      <!-- Create account card -->
+      <div class="rounded-xl border border-[#1e3a5f] bg-[#111827]/80 p-8 backdrop-blur-sm">
+        <div class="mb-4 flex items-center gap-3">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#00d4ff]/30 bg-[#00d4ff]/10">
+            <UserPlus class="h-5 w-5 text-[#00d4ff]" />
+          </div>
+          <div>
+            <h2 class="font-bold text-[#e2e8f0]">New here?</h2>
+            <p class="text-xs text-[#e2e8f0]/50">Create a SCID account, then link your RSI identity.</p>
+          </div>
+        </div>
+        <button
+          onclick={startRegistration}
+          disabled={registerLoading}
+          class="flex w-full items-center justify-center gap-2 rounded-lg border border-[#00d4ff]/40 px-5 py-2.5 text-sm font-semibold text-[#00d4ff] transition-colors hover:bg-[#00d4ff]/10 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {#if registerLoading}
+            <LoaderCircle class="h-4 w-4 animate-spin" />
+            Opening registration…
+          {:else}
+            <UserPlus class="h-4 w-4" />
+            Create a SCID account →
+          {/if}
+        </button>
+        <p class="mt-3 text-center text-xs text-[#e2e8f0]/40">
+          You'll set up a passkey on the next page.<br />After that, come back here to link your RSI handle.
+        </p>
+      </div>
+
+      <!-- Sign in card -->
+      <div class="rounded-xl border border-[#1e3a5f] bg-[#111827]/80 p-8 backdrop-blur-sm">
+        <div class="mb-4 flex items-center gap-3">
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#1e3a5f] bg-[#0d1526]">
+            <LogIn class="h-5 w-5 text-[#94a3b8]" />
+          </div>
+          <div>
+            <h2 class="font-bold text-[#e2e8f0]">Already have an account?</h2>
+            <p class="text-xs text-[#e2e8f0]/50">Sign in to start or continue RSI identity verification.</p>
+          </div>
+        </div>
+        <button
+          onclick={() => login('/verify')}
+          class="flex w-full items-center justify-center gap-2 rounded-lg bg-[#00d4ff] px-5 py-2.5 text-sm font-semibold text-[#0a0e1a] transition-colors hover:bg-[#00b8dc]"
+        >
+          <LogIn class="h-4 w-4" />
+          Sign in with SCID
+        </button>
+      </div>
+    </div>
+  {:else if data.status?.verified}
     <!-- Already-verified card -->
     <div
       class="w-full max-w-lg rounded-xl border border-emerald-500/30 bg-[#111827]/80 p-8 text-center backdrop-blur-sm"
@@ -154,7 +234,7 @@
       </p>
       <div class="flex flex-col gap-3 sm:flex-row sm:justify-center">
         <a
-          href="https://robertsspaceindustries.com/en/citizens/{data.status.handle}/edit"
+          href="https://robertsspaceindustries.com/en/account/profile"
           target="_blank"
           rel="noopener noreferrer"
           class="rounded-lg border border-[#1e3a5f] px-5 py-2.5 text-sm font-medium text-[#e2e8f0]/70 transition-colors hover:border-[#00d4ff]/40 hover:text-[#00d4ff]"
@@ -313,12 +393,12 @@
           <p class="text-sm text-[#e2e8f0]/70">
             Open your RSI profile to add the token:
             <a
-              href="https://robertsspaceindustries.com/en/citizens/{handle}/edit"
+              href="https://robertsspaceindustries.com/en/account/profile"
               target="_blank"
               rel="noopener noreferrer"
               class="text-[#00d4ff] hover:underline"
             >
-              Edit your profile →
+              Edit your RSI profile →
             </a>
           </p>
 
@@ -364,7 +444,7 @@
           </p>
           <div class="flex flex-col gap-3 pt-2 sm:flex-row sm:justify-center">
             <a
-              href="https://robertsspaceindustries.com/en/citizens/{handle}/edit"
+              href="https://robertsspaceindustries.com/en/account/profile"
               target="_blank"
               rel="noopener noreferrer"
               class="rounded-lg border border-[#1e3a5f] px-5 py-2.5 text-sm font-medium text-[#e2e8f0]/70 transition-colors hover:border-[#00d4ff]/40 hover:text-[#00d4ff]"

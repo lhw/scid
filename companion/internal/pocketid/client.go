@@ -13,11 +13,19 @@ import (
 
 const defaultTimeout = 5 * time.Second
 
-// User represents a Pocket ID user returned from /api/users/me or /api/users/:id.
+// User represents a Pocket ID user.
 type User struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
 	Email    string `json:"email"`
+}
+
+// userinfoResponse maps OIDC standard userinfo claims.
+type userinfoResponse struct {
+	Sub               string `json:"sub"`
+	PreferredUsername string `json:"preferred_username"`
+	Name              string `json:"name"`
+	Email             string `json:"email"`
 }
 
 // Group represents a Pocket ID user group.
@@ -56,19 +64,30 @@ func New(baseURL, adminKey string) *Client {
 	}
 }
 
-// GetCurrentUser validates a Bearer token and returns the associated user.
+// GetCurrentUser validates an OIDC Bearer token via the userinfo endpoint
+// and returns the associated user.
 func (c *Client) GetCurrentUser(ctx context.Context, bearerToken string) (*User, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/users/me", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/oidc/userinfo", nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
 
-	var user User
-	if err := c.do(req, &user); err != nil {
-		return nil, fmt.Errorf("get current user: %w", err)
+	var info userinfoResponse
+	if err := c.do(req, &info); err != nil {
+		return nil, fmt.Errorf("get userinfo: %w", err)
 	}
-	return &user, nil
+
+	username := info.PreferredUsername
+	if username == "" {
+		username = info.Name
+	}
+
+	return &User{
+		ID:       info.Sub,
+		Username: username,
+		Email:    info.Email,
+	}, nil
 }
 
 // GetUserGroups returns all groups the given user belongs to.
@@ -195,6 +214,46 @@ func (c *Client) SetCustomClaims(ctx context.Context, userID string, claims []Cu
 		return fmt.Errorf("set custom claims: %w", err)
 	}
 	return nil
+}
+
+// SignupToken is a single-use Pocket ID registration token.
+type SignupToken struct {
+	ID         string    `json:"id"`
+	Token      string    `json:"token"`
+	ExpiresAt  time.Time `json:"expiresAt"`
+	UsageLimit int       `json:"usageLimit"`
+	UsageCount int       `json:"usageCount"`
+}
+
+// CreateSignupToken creates a 1-use signup token that expires in 1 hour.
+// The token can be used at <pocket_id_public_url>/signup?token=<token>.
+func (c *Client) CreateSignupToken(ctx context.Context) (*SignupToken, error) {
+	body := struct {
+		ExpiresAt  string `json:"expiresAt"`
+		UsageLimit int    `json:"usageLimit"`
+	}{
+		ExpiresAt:  time.Now().UTC().Add(time.Hour).Format(time.RFC3339),
+		UsageLimit: 1,
+	}
+
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/api/signup-tokens", bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	c.setAdminAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	var st SignupToken
+	if err := c.do(req, &st); err != nil {
+		return nil, fmt.Errorf("create signup token: %w", err)
+	}
+	return &st, nil
 }
 
 // GetUser returns the Pocket ID user for the given user ID.
