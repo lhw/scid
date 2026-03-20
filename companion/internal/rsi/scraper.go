@@ -1,0 +1,229 @@
+package rsi
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"golang.org/x/net/html"
+)
+
+const (
+	// DefaultProfileBaseURL is the production RSI citizen profile base URL.
+	DefaultProfileBaseURL = "https://robertsspaceindustries.com/en/citizens/"
+	rsiTimeout            = 10 * time.Second
+	userAgent             = "SCID-Companion/1.0 (Star Citizen Identity Provider; unofficial fansite tool)"
+)
+
+// Profile holds the fields we extract from a public RSI profile page.
+type Profile struct {
+	Handle        string
+	Bio           string
+	CitizenRecord string // e.g. "#40746"
+	Enlisted      string // e.g. "Oct 18, 2012"
+}
+
+// Scraper fetches and parses RSI public profile pages.
+type Scraper struct {
+	baseURL string
+	client  *http.Client
+}
+
+// New creates a new Scraper targeting the production RSI website.
+func New() *Scraper {
+	return NewWithBaseURL(DefaultProfileBaseURL)
+}
+
+// newWithBaseURL creates a Scraper with an overridden base URL (for testing).
+func NewWithBaseURL(baseURL string) *Scraper {
+	return &Scraper{
+		baseURL: baseURL,
+		client: &http.Client{
+			Timeout: rsiTimeout,
+		},
+	}
+}
+
+// FetchProfile fetches and parses the RSI profile page for the given handle.
+func (s *Scraper) FetchProfile(ctx context.Context, handle string) (*Profile, error) {
+	profileURL := s.baseURL + handle
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, profileURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch profile: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("RSI handle %q not found", handle)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("RSI responded %d for handle %q", resp.StatusCode, handle)
+	}
+
+	doc, err := html.Parse(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("parse HTML: %w", err)
+	}
+
+	return parseProfile(handle, doc), nil
+}
+
+// ContainsToken reports whether the profile bio contains the given token string.
+func ContainsToken(profile *Profile, token string) bool {
+	return strings.Contains(profile.Bio, token)
+}
+
+// parseProfile walks the parsed HTML tree and extracts Profile fields.
+func parseProfile(handle string, doc *html.Node) *Profile {
+	p := &Profile{Handle: handle}
+
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			switch {
+			case hasCSSClass(n, "bio") || hasDataAttr(n, "bio"):
+				// The bio is typically inside a <div class="bio"> or similar.
+				p.Bio = strings.TrimSpace(extractText(n))
+
+			case hasCSSClass(n, "citizen-record") || hasCSSClass(n, "record-number"):
+				// UEE Citizen Record block — look for a child value element.
+				record := extractValueText(n)
+				if record != "" && p.CitizenRecord == "" {
+					p.CitizenRecord = strings.TrimSpace(record)
+				}
+
+			case hasCSSClass(n, "citizen-stat") || hasCSSClass(n, "entry"):
+				// Generic stat entries: look for a label child that says "Enlisted"
+				// and extract the adjacent value.
+				label, value := extractLabelValue(n)
+				lower := strings.ToLower(label)
+				switch {
+				case strings.Contains(lower, "enlisted") || strings.Contains(lower, "enlistment"):
+					if p.Enlisted == "" {
+						p.Enlisted = strings.TrimSpace(value)
+					}
+				case strings.Contains(lower, "record") || strings.Contains(lower, "citizen"):
+					if p.CitizenRecord == "" && strings.Contains(value, "#") {
+						p.CitizenRecord = strings.TrimSpace(value)
+					}
+				}
+			}
+		}
+
+		// Also look for spans/divs with data-label or aria-label attributes that
+		// describe individual fields, covering alternate RSI page layouts.
+		if n.Type == html.ElementNode {
+			label := getAttr(n, "data-label")
+			if label == "" {
+				label = getAttr(n, "aria-label")
+			}
+			lower := strings.ToLower(label)
+			if strings.Contains(lower, "uee citizen record") || strings.Contains(lower, "citizen record") {
+				if p.CitizenRecord == "" {
+					p.CitizenRecord = strings.TrimSpace(extractText(n))
+				}
+			}
+			if strings.Contains(lower, "enlisted") {
+				if p.Enlisted == "" {
+					p.Enlisted = strings.TrimSpace(extractText(n))
+				}
+			}
+		}
+
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+
+	walk(doc)
+	return p
+}
+
+// hasCSSClass reports whether an element node has the given class among its
+// space-separated class attribute values.
+func hasCSSClass(n *html.Node, class string) bool {
+	for _, a := range n.Attr {
+		if a.Key == "class" {
+			for _, c := range strings.Fields(a.Val) {
+				if c == class {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// hasDataAttr reports whether an element has a data-<name> attribute.
+func hasDataAttr(n *html.Node, name string) bool {
+	key := "data-" + name
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// getAttr returns the value of the named attribute, or "".
+func getAttr(n *html.Node, name string) string {
+	for _, a := range n.Attr {
+		if a.Key == name {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+// extractText recursively collects all text content under a node.
+func extractText(n *html.Node) string {
+	var b strings.Builder
+	var walk func(*html.Node)
+	walk = func(node *html.Node) {
+		if node.Type == html.TextNode {
+			b.WriteString(node.Data)
+		}
+		for c := node.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(n)
+	return b.String()
+}
+
+// extractValueText looks for an immediate child element with class "value" or
+// "content" and returns its text.
+func extractValueText(n *html.Node) string {
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode &&
+			(hasCSSClass(c, "value") || hasCSSClass(c, "content") || hasCSSClass(c, "number")) {
+			return extractText(c)
+		}
+	}
+	return extractText(n)
+}
+
+// extractLabelValue finds the first child with class "label"/"name" and the
+// first child with class "value"/"content", returning their texts.
+func extractLabelValue(n *html.Node) (label, value string) {
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode {
+			continue
+		}
+		if hasCSSClass(c, "label") || hasCSSClass(c, "name") || hasCSSClass(c, "label-value") {
+			label = extractText(c)
+		} else if hasCSSClass(c, "value") || hasCSSClass(c, "content") {
+			value = extractText(c)
+		}
+	}
+	return
+}

@@ -287,13 +287,51 @@ RSI org SIDs are synced as Pocket ID groups with a `rsi:` prefix to avoid collis
 ## Project Phases
 
 ### Phase 1: Foundation
-- [ ] Set up Pocket ID instance with Docker Compose
+- [x] Set up Pocket ID instance with Docker Compose
 - [ ] Configure Pocket ID (branding, user signup, email)
-- [ ] Build SCID companion service skeleton (Go)
-- [ ] Implement RSI bio verification flow
-- [ ] Scrape and store citizen record number and enlistment date from profile page
-- [ ] Store verification results as Pocket ID custom claims via API
-- [ ] Basic UI for verification wizard
+- [x] Build SCID companion service skeleton (Go)
+- [x] Implement RSI bio verification flow
+- [x] Scrape and store citizen record number and enlistment date from profile page
+- [x] Store verification results as Pocket ID custom claims via API
+- [x] Basic UI for verification wizard
+- [ ] Profile page with re-verification trigger
+
+---
+
+### Profile Page (`/profile`)
+
+Displays the authenticated user's current SCID state and allows them to refresh their RSI data on demand.
+
+**UI sections:**
+
+1. **Identity card** — glass card showing:
+   - RSI handle (or "Not verified" if absent)
+   - Verification status badge (`VerificationBadge` component)
+   - Citizen Record number
+   - Enlistment date
+   - Date last verified (`rsi_verified_at` claim)
+
+2. **Re-verify button** — "Refresh RSI Data" button (teal, with a `RefreshCw` icon). Clicking it:
+   - Calls `POST /api/verify/refresh` on the companion (new endpoint, to be implemented)
+   - The endpoint re-scrapes the user's RSI profile (no bio token needed — handle is already known and trusted)
+   - Updates `rsi_citizen_record`, `rsi_enlisted`, and `rsi_verified_at` claims in Pocket ID
+   - Returns updated claim values to the frontend
+   - Shows a spinner while in-progress, a toast on success/failure
+
+3. **Danger zone** — "Unlink RSI Account" button (destructive, outlined red). Clears all `rsi_*` claims and removes the user from the `verified` group. Requires a confirmation dialog before proceeding.
+
+**Data loading:** The page load function calls `GET /api/verify/status` (already implemented) to populate the initial state. Re-verify refreshes state after completion.
+
+**Backend work needed (Phase 1 completion):**
+- `POST /api/verify/refresh` handler in `internal/api/verify.go`
+  - Authenticate via Bearer token (same middleware as existing endpoints)
+  - Look up stored `rsi_handle` claim via Pocket ID API
+  - Call `rsi.FetchProfile(ctx, handle)` — same scraper, no token check
+  - Call `pocketid.SetUserClaims(...)` with updated values
+  - Return `{handle, rsi_citizen_record, rsi_enlisted, rsi_verified_at}`
+- `DELETE /api/verify` handler (or `POST /api/verify/unlink`) for the unlink action
+  - Remove user from `verified` group
+  - Clear all `rsi_*` claims
 
 ### Phase 2: Client App Registration
 - [ ] Build self-service OIDC client registration

@@ -1,0 +1,32 @@
+# =============================================================================
+# Caddyfile — SCID reverse proxy
+# =============================================================================
+# Replace id.example.com and companion.example.com with your actual domains,
+# or use a single domain with path-based routing (see comment below).
+# =============================================================================
+
+# Pocket ID — the main OIDC provider (login, passkeys, consent)
+id.example.com {
+    reverse_proxy pocket-id:3000
+}
+
+# SCID Companion — RSI verification + self-service app registration
+companion.example.com {
+    # Static frontend (served by the companion Go binary)
+    reverse_proxy companion:8080
+}
+
+# ---------------------------------------------------------------------------
+# Alternative: single-domain setup (uncomment and remove the blocks above)
+# ---------------------------------------------------------------------------
+# id.example.com {
+#     # Route companion API and UI under /companion/*
+#     handle /companion/* {
+#         uri strip_prefix /companion
+#         reverse_proxy companion:8080
+#     }
+#     # Everything else goes to Pocket ID
+#     handle {
+#         reverse_proxy pocket-id:3000
+#     }
+# }
