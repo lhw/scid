@@ -220,7 +220,19 @@ type statusResponse struct {
 }
 
 func (s *Server) handleVerifyStatus(w http.ResponseWriter, r *http.Request) {
-	user := userFromContext(r.Context())
+	// If no valid Bearer token, return an unauthenticated-but-OK response so
+	// the home page can render without the user being logged in.
+	token := extractBearerToken(r)
+	if token == "" {
+		writeJSON(w, http.StatusOK, statusResponse{})
+		return
+	}
+	user, err := s.pid.GetCurrentUser(r.Context(), token)
+	if err != nil {
+		writeJSON(w, http.StatusOK, statusResponse{})
+		return
+	}
+
 	resp := statusResponse{}
 
 	pending, err := s.store.GetTokenByUserID(r.Context(), user.ID)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 
 	"github.com/lhw/scid/companion/internal/config"
 	"github.com/lhw/scid/companion/internal/pocketid"
@@ -48,15 +49,26 @@ func (s *Server) buildRouter() *chi.Mux {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
+	// CORS — allow the frontend origin and localhost dev server.
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"https://scid.my", "http://localhost:5173"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowCredentials: false,
+		MaxAge:           300,
+	}))
+
 	// TODO: add rate limiting middleware before public launch.
 
 	r.Get("/api/health", s.handleHealth)
+	// Status is intentionally public — returns {verified:false} when unauthenticated
+	// so the home page can load without a login.
+	r.Get("/api/verify/status", s.handleVerifyStatus)
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.bearerAuthMiddleware)
 		r.Post("/api/verify/start", s.handleVerifyStart)
 		r.Post("/api/verify/confirm", s.handleVerifyConfirm)
-		r.Get("/api/verify/status", s.handleVerifyStatus)
 	})
 
 	return r

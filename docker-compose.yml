@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   # ---------------------------------------------------------------------------
   # Pocket ID — the OIDC provider
@@ -8,8 +6,9 @@ services:
     image: ghcr.io/pocket-id/pocket-id:latest
     restart: unless-stopped
     environment:
-      APP_URL: ${APP_URL}
+      APP_URL: https://id.scid.my
       TRUST_PROXY: "true"
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       # Uncomment if using PostgreSQL instead of SQLite:
       # DB_PROVIDER: postgres
       # DB_CONNECTION_STRING: postgres://pocket-id:${POSTGRES_PASSWORD}@db:5432/pocket-id
@@ -39,16 +38,35 @@ services:
       - pocket-id
 
   # ---------------------------------------------------------------------------
-  # Caddy — reverse proxy with automatic HTTPS
+  # SvelteKit frontend — dev server (Vite HMR)
+  # ---------------------------------------------------------------------------
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install -g pnpm && pnpm install && pnpm dev --host 0.0.0.0"
+    environment:
+      # Tell the Vite dev proxy where the companion lives inside the stack
+      VITE_API_BASE: http://companion:8080
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+    networks:
+      - internal
+    depends_on:
+      - companion
+
+  # ---------------------------------------------------------------------------
+  # Caddy — reverse proxy with static mkcert TLS (local dev)
   # ---------------------------------------------------------------------------
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/certs:/certs:ro
       - caddy-data:/data
       - caddy-config:/config
     networks:
@@ -56,12 +74,14 @@ services:
     depends_on:
       - pocket-id
       - companion
+      - frontend
 
 volumes:
   pocket-id-data:
   companion-data:
   caddy-data:
   caddy-config:
+  frontend-node-modules:
 
 networks:
   internal:

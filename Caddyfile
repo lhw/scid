@@ -1,32 +1,36 @@
 # =============================================================================
-# Caddyfile — SCID reverse proxy
+# Caddyfile — SCID reverse proxy  (local dev)
 # =============================================================================
-# Replace id.example.com and companion.example.com with your actual domains,
-# or use a single domain with path-based routing (see comment below).
+# Domains: id.scid.my  →  Pocket ID
+#          scid.my     →  SCID companion + SvelteKit frontend
+#
+# TLS is handled with locally-trusted mkcert certificates (wildcard *.scid.my).
+# Caddy's automatic HTTPS / ACME is disabled for these blocks; the cert files
+# are mounted into the container at /certs/.
 # =============================================================================
 
+{
+    # Disable the global ACME HTTP challenge listener — we're using static certs
+    auto_https off
+}
+
 # Pocket ID — the main OIDC provider (login, passkeys, consent)
-id.example.com {
+id.scid.my {
+    tls /certs/scid.my+1.pem /certs/scid.my+1-key.pem
     reverse_proxy pocket-id:3000
 }
 
-# SCID Companion — RSI verification + self-service app registration
-companion.example.com {
-    # Static frontend (served by the companion Go binary)
-    reverse_proxy companion:8080
-}
+# SCID — companion API + SvelteKit frontend
+scid.my {
+    tls /certs/scid.my+1.pem /certs/scid.my+1-key.pem
 
-# ---------------------------------------------------------------------------
-# Alternative: single-domain setup (uncomment and remove the blocks above)
-# ---------------------------------------------------------------------------
-# id.example.com {
-#     # Route companion API and UI under /companion/*
-#     handle /companion/* {
-#         uri strip_prefix /companion
-#         reverse_proxy companion:8080
-#     }
-#     # Everything else goes to Pocket ID
-#     handle {
-#         reverse_proxy pocket-id:3000
-#     }
-# }
+    # Companion REST API
+    handle /api/* {
+        reverse_proxy companion:8080
+    }
+
+    # SvelteKit frontend (dev server)
+    handle {
+        reverse_proxy frontend:5173
+    }
+}

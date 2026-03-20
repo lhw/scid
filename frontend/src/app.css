@@ -1,6 +1,11 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+body {
+  background-color: var(--color-background, #0a0e1a);
+  color: var(--color-text, #e2e8f0);
+}
+
 :root {
   --color-background: #0a0e1a;
   --color-surface: #111827;
