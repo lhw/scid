@@ -275,6 +275,7 @@ type statusResponse struct {
 	Orgs             []OrgEntry `json:"orgs,omitempty"`
 	PendingHandle    string     `json:"pending_handle,omitempty"`
 	PendingExpiresAt *time.Time `json:"pending_expires_at,omitempty"`
+	NextSyncAt       *time.Time `json:"next_sync_at,omitempty"`
 }
 
 func (s *Server) handleVerifyStatus(w http.ResponseWriter, r *http.Request) {
@@ -359,6 +360,12 @@ func (s *Server) handleVerifyStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			slog.WarnContext(r.Context(), "get user orgs failed", "err", err)
+		}
+
+		// Expose when the next background org re-sync is due.
+		if syncEntry, err := s.store.GetOrgSync(r.Context(), user.ID); err == nil {
+			next := syncEntry.SyncedAt.Add(orgReverifyAge)
+			resp.NextSyncAt = &next
 		}
 	}
 

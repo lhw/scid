@@ -1,0 +1,5 @@
+theme: jekyll-theme-midnight
+title: My SCID — Documentation
+description: Unofficial Star Citizen Identity Provider — integration guide and reference
+url: "https://scid.my"
+baseurl: "/docs"

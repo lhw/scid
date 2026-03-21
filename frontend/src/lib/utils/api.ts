@@ -19,6 +19,7 @@ export interface VerifyStatus {
   orgs?: OrgEntry[];
   pending_handle?: string;
   pending_expires_at?: string;
+  next_sync_at?: string;
 }
 
 export interface StartVerifyResponse {

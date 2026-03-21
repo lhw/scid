@@ -47,6 +47,24 @@
     if (status?.user_id) return `${PUBLIC_POCKET_ID_URL}/api/users/${status.user_id}/profile-picture.png`;
     return '';
   }
+
+  /** Returns a human-friendly relative time string for a future or past ISO date. */
+  function relativeTime(isoDate: string): string {
+    const ms = new Date(isoDate).getTime() - Date.now();
+    const abs = Math.abs(ms);
+    const past = ms < 0;
+    if (abs < 60_000) return past ? 'just now' : 'in moments';
+    if (abs < 3_600_000) {
+      const m = Math.round(abs / 60_000);
+      return past ? `${m}m ago` : `in ${m}m`;
+    }
+    if (abs < 86_400_000) {
+      const h = Math.round(abs / 3_600_000);
+      return past ? `${h}h ago` : `in ${h}h`;
+    }
+    const d = Math.round(abs / 86_400_000);
+    return past ? `${d} day${d !== 1 ? 's' : ''} ago` : `in ${d} day${d !== 1 ? 's' : ''}`;
+  }
 </script>
 
 {#if status?.verified}
@@ -98,6 +116,17 @@
           </div>
         {/if}
       </dl>
+
+      {#if status.next_sync_at}
+        <div class="mb-5 flex items-center gap-2 rounded-lg border border-[#1e3a5f] bg-[#0a0e1a]/60 px-4 py-2.5 text-xs text-[#e2e8f0]/50">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-[#00d4ff]/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          Next profile &amp; org sync:
+          <span class="ml-0.5 font-medium text-[#e2e8f0]/70">{relativeTime(status.next_sync_at)}</span>
+          <span class="ml-auto text-[#e2e8f0]/30">{new Date(status.next_sync_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+        </div>
+      {/if}
 
       <button
         onclick={handleRefresh}

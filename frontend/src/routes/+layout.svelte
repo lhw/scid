@@ -25,7 +25,7 @@
 </script>
 
 <svelte:head>
-  <title>SCID — Star Citizen Identity Provider</title>
+  <title>My SCID — Unofficial Star Citizen Identity Provider</title>
 </svelte:head>
 
 <ModeWatcher defaultMode="dark" />
@@ -40,9 +40,9 @@
         <span
           class="text-2xl font-bold tracking-widest text-[#00d4ff] transition-opacity group-hover:opacity-80"
         >
-          SCID
+          My SCID
         </span>
-        <span class="text-xs text-[#e2e8f0]/50">Star Citizen Identity Provider</span>
+        <span class="text-xs text-[#e2e8f0]/50">Unofficial Star Citizen Identity Provider</span>
       </a>
       {#if isAuthenticated}
         <div class="flex items-center gap-3">
@@ -77,5 +77,7 @@
 
   <footer class="border-t border-[#1e3a5f] py-6 text-center text-xs text-[#e2e8f0]/40">
     This is an unofficial fansite — not affiliated with Cloud Imperium Games.
+    <span class="mx-2 opacity-40">·</span>
+    <a href="/impressum" class="hover:text-[#e2e8f0]/70 transition-colors">Impressum</a>
   </footer>
 </div>

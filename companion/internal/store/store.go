@@ -496,6 +496,22 @@ func (s *Store) InsertOrgSyncIfMissing(ctx context.Context, userID, handle strin
 	return nil
 }
 
+// GetOrgSync returns the sync entry for a specific user, or ErrNotFound.
+func (s *Store) GetOrgSync(ctx context.Context, userID string) (OrgSyncEntry, error) {
+	const q = `SELECT pocket_id_user_id, handle, synced_at FROM user_org_sync WHERE pocket_id_user_id = ?`
+	row := s.db.QueryRowContext(ctx, q, userID)
+	var e OrgSyncEntry
+	var syncedAt string
+	if err := row.Scan(&e.PocketIDUserID, &e.Handle, &syncedAt); err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return OrgSyncEntry{}, ErrNotFound
+		}
+		return OrgSyncEntry{}, fmt.Errorf("get org sync: %w", err)
+	}
+	e.SyncedAt, _ = parseTime(syncedAt)
+	return e, nil
+}
+
 // ListExpiredOrgSyncs returns all entries where synced_at is older than cutoff,
 // ordered oldest-first so the most-stale users are processed first.
 func (s *Store) ListExpiredOrgSyncs(ctx context.Context, cutoff time.Time) ([]OrgSyncEntry, error) {

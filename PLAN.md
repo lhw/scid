@@ -341,12 +341,21 @@ The home page (`/`) is the profile hub for logged-in users. Implemented.
 - [x] `rsi:<SID>`-prefixed Pocket ID groups synced from org SIDs on verification and refresh
 
 ### Phase 3: Polish & Hardening
-- [ ] Rate limiting on verification and API endpoints
+- [x] Rate limiting on verification and API endpoints — Cloudflare Turnstile on signup, moved to dedicated `/register` page
 - [x] Periodic re-verification background job — weekly goroutine re-fetches profile + orgs for all `verified` group members (`internal/api/reverify.go`)
-- [x] Cloudflare Turnstile captcha on signup — server-side validation in `register.go`, widget in `verify/+page.svelte`; skipped when `TURNSTILE_SECRET_KEY` is unset (dev mode)
+- [x] Cloudflare Turnstile captcha on signup — server-side validation in `register.go`, widget on `/register` page (themed, styled); skipped when `TURNSTILE_SECRET_KEY` is unset (dev mode)
+- [x] Session persistence — access token moved from `sessionStorage` to `localStorage` so sessions survive tab closes and new tabs; PKCE state stays in sessionStorage
+- [x] OIDC callback full-page reload — `window.location.replace()` ensures layout re-mounts after login so header links appear immediately
+- [x] Manage Account link navigates same-tab — avoids `noopener` session isolation issue
+- [x] `/register` dedicated page — Turnstile widget removed from `/verify`; "Create SCID account" links to `/register`, which forwards to Pocket ID `/signup` with validated token
+- [x] CitizenRecord stored as integer-only (strip leading `#`) in scraper; frontend re-adds `#` for display
+- [x] Group members endpoint fixed — uses `GET /api/users?groupId=` instead of non-existent `/api/user-groups/{id}/members`
+- [x] Impressum page (`/impressum`) with obfuscated contact info, linked from footer
+- [x] Header branding — "My SCID" as site name, "Unofficial Star Citizen Identity Provider" as tagline
+- [x] Profile card shows next org re-sync time (human relative, e.g. "in 3 days")
 - [ ] Audit logging
 - [ ] Monitoring & health checks
-- [ ] User documentation / onboarding guide
+- [x] User documentation — GitHub Pages docs site (`docs/`) with integration guide, OIDC claims reference, setup instructions
 
 ### Phase 4: Future Enhancements
 - [ ] Community portal / directory of fan sites using SCID
