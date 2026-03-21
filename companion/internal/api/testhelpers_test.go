@@ -138,9 +138,40 @@ func (m *mockPocketID) ensureGroupLocked(name, friendlyName string) *pidGroup {
 func (m *mockPocketID) buildRouter() http.Handler {
 	r := chi.NewRouter()
 
-	// OIDC discovery — used by pid.Ping()
-	r.Get("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"issuer": "http://test-pid"})
+	// OIDC discovery — used by the OIDC client for ping, token exchange, and userinfo.
+	r.Get("/.well-known/openid-configuration", func(w http.ResponseWriter, req *http.Request) {
+		baseURL := "http://" + req.Host
+		writeJSON(w, http.StatusOK, map[string]any{
+			"issuer":                 baseURL,
+			"authorization_endpoint": baseURL + "/authorize",
+			"token_endpoint":         baseURL + "/api/oidc/token",
+			"userinfo_endpoint":      baseURL + "/api/oidc/userinfo",
+		})
+	})
+
+	// Token exchange — used by auth callback tests.
+	r.Post("/api/oidc/token", func(w http.ResponseWriter, req *http.Request) {
+		if err := req.ParseForm(); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		code := req.Form.Get("code")
+		if code == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		m.mu.Lock()
+		_, ok := m.tokens[code]
+		m.mu.Unlock()
+		if !ok {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"access_token": code,
+			"token_type":   "Bearer",
+			"expires_in":   3600,
+		})
 	})
 
 	// Userinfo — used to authenticate bearer tokens
@@ -483,9 +514,11 @@ func newTestEnv(t *testing.T, requireApproval bool) *testEnv {
 	cfg := &config.Config{
 		PocketIDInternalURL: pidSrv.URL,
 		PocketIDAdminAPIKey: "test-admin-key",
+		OIDCIssuerURL:       pidSrv.URL,
 		OIDCClientID:        "scid-frontend",
 		SessionSecretKey:    "test-session-secret-key-32bytes!",
 		SessionTTL:          24 * 60 * 60 * 1e9, // 24h
+		SessionCookieSecure: false,
 		RequireAppApproval:  requireApproval,
 	}
 

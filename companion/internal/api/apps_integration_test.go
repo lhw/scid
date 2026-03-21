@@ -397,3 +397,45 @@ func TestAdminListApps(t *testing.T) {
 	env.mustStatus(resp, http.StatusForbidden)
 	env.drain(resp)
 }
+
+func TestCreateApp_PendingListedIntentPreservedThroughApproval(t *testing.T) {
+	env := newTestEnv(t, true)
+	env.addUser("tok-alice", "user-alice", "alice", "verified")
+	env.addUser("tok-admin", "user-admin", "admin", "admin")
+
+	body := map[string]any{
+		"name":          "Pending Listed App",
+		"redirect_uris": []string{"https://example.com/callback"},
+		"launch_url":    "https://example.com/launch",
+		"is_public":     true,
+		"listed":        true,
+	}
+
+	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", body)
+	env.mustStatus(resp, http.StatusCreated)
+
+	var created appResponse
+	env.decodeJSON(resp, &created)
+	if created.Status != "pending" {
+		t.Fatalf("expected pending status, got %q", created.Status)
+	}
+	if !created.Listed {
+		t.Fatal("expected listed intent to be preserved while pending")
+	}
+
+	resp = env.do(http.MethodPost, "/api/admin/apps/"+created.ID+"/approve", "tok-admin", nil)
+	env.mustStatus(resp, http.StatusOK)
+	env.drain(resp)
+
+	resp = env.do(http.MethodGet, "/api/apps/directory", "", nil)
+	env.mustStatus(resp, http.StatusOK)
+	var dir []appResponse
+	env.decodeJSON(resp, &dir)
+
+	for _, app := range dir {
+		if app.ID == created.ID {
+			return
+		}
+	}
+	t.Fatal("approved app with preserved listed intent was not included in directory")
+}

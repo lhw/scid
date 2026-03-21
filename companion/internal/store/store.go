@@ -68,6 +68,12 @@ CREATE TABLE IF NOT EXISTS verified_handles (
     pocket_id_user_id TEXT NOT NULL UNIQUE,
     verified_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS sessions (
+    token TEXT PRIMARY KEY,
+    data BLOB NOT NULL,
+    expiry REAL NOT NULL
+);
 `
 
 // migrations adds columns that were introduced after initial schema creation.
@@ -125,6 +131,11 @@ func splitMigrations(s string) []string {
 // Close closes the underlying database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+// DB exposes the underlying SQL database for integrations like session stores.
+func (s *Store) DB() *sql.DB {
+	return s.db
 }
 
 // UpsertToken inserts a new verification token for the user, or returns the

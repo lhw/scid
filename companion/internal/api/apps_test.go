@@ -82,3 +82,27 @@ func TestDetectLogoContentType(t *testing.T) {
 		})
 	}
 }
+
+func TestIsValidCallbackURL_StrictLocalhostValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{name: "https callback allowed", raw: "https://example.com/callback", want: true},
+		{name: "localhost callback allowed", raw: "http://localhost:3000/callback", want: true},
+		{name: "loopback callback allowed", raw: "http://127.0.0.1:3000/callback", want: true},
+		{name: "localhost prefix attack rejected", raw: "http://localhost.attacker.tld/callback", want: false},
+		{name: "loopback prefix attack rejected", raw: "http://127.0.0.1.attacker.tld/callback", want: false},
+		{name: "userinfo rejected", raw: "https://user@example.com/callback", want: false},
+		{name: "fragment rejected", raw: "https://example.com/callback#frag", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isValidCallbackURL(tt.raw); got != tt.want {
+				t.Fatalf("isValidCallbackURL(%q) = %t, want %t", tt.raw, got, tt.want)
+			}
+		})
+	}
+}

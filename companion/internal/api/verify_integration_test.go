@@ -359,3 +359,70 @@ func contains(s, substr string) bool {
 // pidClaim is an alias used in tests to set user claims directly on the mock.
 // It mirrors pocketid.CustomClaim without importing the package at test setup time.
 type pidClaim = pocketid.CustomClaim
+
+func TestVerifyConfirm_PreservesUnmanagedCustomClaims(t *testing.T) {
+	env := newTestEnv(t, false)
+	env.addUser("tok-alice", "user-alice", "alice")
+
+	env.pid.mu.Lock()
+	env.pid.users["user-alice"].claims = []pidClaim{{Key: "favorite_ship", Value: "Carrack"}}
+	env.pid.mu.Unlock()
+
+	resp := env.do(http.MethodPost, "/api/verify/start", "tok-alice", map[string]string{"handle": "AliceRSI"})
+	env.mustStatus(resp, http.StatusOK)
+	var sr startResponse
+	env.decodeJSON(resp, &sr)
+
+	env.scraper.setProfile(&rsi.Profile{
+		Bio:           "Token: " + sr.Token,
+		CitizenRecord: "#99999",
+		Enlisted:      "Jan 1, 2020",
+	})
+
+	resp = env.do(http.MethodPost, "/api/verify/confirm", "tok-alice", nil)
+	env.mustStatus(resp, http.StatusOK)
+	env.drain(resp)
+
+	env.pid.mu.Lock()
+	defer env.pid.mu.Unlock()
+	claims := env.pid.users["user-alice"].claims
+	for _, claim := range claims {
+		if claim.Key == "favorite_ship" && claim.Value == "Carrack" {
+			return
+		}
+	}
+	t.Fatal("unmanaged custom claim was lost during verification")
+}
+
+func TestVerifyRefresh_PreservesUnmanagedCustomClaims(t *testing.T) {
+	env := newTestEnv(t, false)
+	env.addUser("tok-eve", "user-eve", "eve", "verified")
+
+	env.pid.mu.Lock()
+	env.pid.users["user-eve"].claims = []pidClaim{
+		{Key: "rsi_handle", Value: "EveRSI"},
+		{Key: "rsi_verified_at", Value: "2024-01-01T00:00:00Z"},
+		{Key: "favorite_ship", Value: "Polaris"},
+	}
+	env.pid.mu.Unlock()
+
+	env.scraper.setProfile(&rsi.Profile{
+		Bio:           "Updated bio",
+		Enlisted:      "Mar 5, 2021",
+		CitizenRecord: "#12345",
+	})
+
+	resp := env.do(http.MethodPost, "/api/verify/refresh", "tok-eve", nil)
+	env.mustStatus(resp, http.StatusOK)
+	env.drain(resp)
+
+	env.pid.mu.Lock()
+	defer env.pid.mu.Unlock()
+	claims := env.pid.users["user-eve"].claims
+	for _, claim := range claims {
+		if claim.Key == "favorite_ship" && claim.Value == "Polaris" {
+			return
+		}
+	}
+	t.Fatal("unmanaged custom claim was lost during refresh")
+}

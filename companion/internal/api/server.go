@@ -8,11 +8,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/alexedwards/scs/sqlite3store"
+	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
 	"github.com/lhw/scid/companion/internal/config"
+	"github.com/lhw/scid/companion/internal/oidcclient"
 	"github.com/lhw/scid/companion/internal/pocketid"
 	"github.com/lhw/scid/companion/internal/rsi"
 	"github.com/lhw/scid/companion/internal/store"
@@ -22,22 +25,34 @@ import (
 type Server struct {
 	cfg      *config.Config
 	store    *store.Store
+	auth     *oidcclient.Client
 	pid      *pocketid.Client
 	scraper  rsi.RSIScraper
 	limiter  *rateLimiter
-	sessions *sessionManager
+	sessions *scs.SessionManager
 	router   *chi.Mux
 }
 
 // New creates a configured Server ready to serve HTTP.
 func New(cfg *config.Config, st *store.Store) *Server {
+	sessionManager := scs.New()
+	sessionManager.Store = sqlite3store.NewWithCleanupInterval(st.DB(), 0)
+	sessionManager.Lifetime = cfg.SessionTTL
+	sessionManager.Cookie.Name = sessionCookieName(cfg.SessionCookieSecure)
+	sessionManager.Cookie.Path = "/"
+	sessionManager.Cookie.HttpOnly = true
+	sessionManager.Cookie.SameSite = http.SameSiteLaxMode
+	sessionManager.Cookie.Secure = cfg.SessionCookieSecure
+	sessionManager.Cookie.Persist = true
+
 	s := &Server{
 		cfg:      cfg,
 		store:    st,
+		auth:     oidcclient.New(cfg.OIDCIssuerURL, cfg.OIDCClientID),
 		pid:      pocketid.New(cfg.PocketIDInternalURL, cfg.PocketIDAdminAPIKey),
 		scraper:  rsi.New(),
 		limiter:  newRateLimiter(),
-		sessions: newSessionManager(cfg.SessionSecretKey),
+		sessions: sessionManager,
 	}
 	s.router = s.buildRouter()
 	return s
@@ -55,6 +70,7 @@ func (s *Server) buildRouter() *chi.Mux {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(s.sessions.LoadAndSave)
 	r.Use(prometheusMiddleware)
 
 	// CORS — allow the frontend origin and localhost dev server.
@@ -132,7 +148,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	// Pocket ID being temporarily unreachable is reported as degraded (not 503)
 	// so that companion health checks don't flap during Pocket ID restarts.
-	if err := s.pid.Ping(ctx); err != nil {
+	if err := s.auth.Ping(ctx); err != nil {
 		deps["pocket_id"] = depStatus{Status: "error", Message: err.Error()}
 		if overall == "ok" {
 			overall = "degraded"
@@ -151,7 +167,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // and stores the resolved *pocketid.User in the request context.
 func (s *Server) bearerAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, err := s.resolveAuthenticatedUser(w, r)
+		user, err := s.resolveAuthenticatedUser(r)
 		if err != nil {
 			if !errors.Is(err, errMissingAuth) {
 				slog.WarnContext(r.Context(), "session auth failed", "err", err)

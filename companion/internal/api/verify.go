@@ -177,6 +177,36 @@ func (s *Server) handleVerifyConfirm(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+var managedRSIClaimKeys = map[string]struct{}{
+	"rsi_handle":         {},
+	"rsi_verified_at":    {},
+	"rsi_enlisted":       {},
+	"rsi_citizen_record": {},
+}
+
+func buildRSIClaims(handle, verifiedAt string, profile *rsi.Profile) []pocketid.CustomClaim {
+	claims := []pocketid.CustomClaim{
+		{Key: "rsi_handle", Value: handle},
+		{Key: "rsi_verified_at", Value: verifiedAt},
+		{Key: "rsi_enlisted", Value: parseEnlistDate(profile.Enlisted)},
+	}
+	if citizenRecord := strings.TrimSpace(profile.CitizenRecord); citizenRecord != "" && strings.ToLower(citizenRecord) != "n/a" {
+		claims = append(claims, pocketid.CustomClaim{Key: "rsi_citizen_record", Value: citizenRecord})
+	}
+	return claims
+}
+
+func mergeManagedClaims(existing, managed []pocketid.CustomClaim) []pocketid.CustomClaim {
+	merged := make([]pocketid.CustomClaim, 0, len(existing)+len(managed))
+	for _, claim := range existing {
+		if _, ok := managedRSIClaimKeys[claim.Key]; ok {
+			continue
+		}
+		merged = append(merged, claim)
+	}
+	return append(merged, managed...)
+}
+
 func (s *Server) completeVerification(
 	ctx context.Context,
 	userID string,
@@ -209,14 +239,12 @@ func (s *Server) completeVerification(
 		return fmt.Errorf("set user groups: %w", err)
 	}
 
-	claims := []pocketid.CustomClaim{
-		{Key: "rsi_handle", Value: vt.RSIHandle},
-		{Key: "rsi_verified_at", Value: time.Now().UTC().Format(time.RFC3339)},
-		{Key: "rsi_enlisted", Value: parseEnlistDate(profile.Enlisted)},
+	detail, err := s.pid.GetUser(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("get user detail: %w", err)
 	}
-	if r := strings.TrimSpace(profile.CitizenRecord); r != "" && strings.ToLower(r) != "n/a" {
-		claims = append(claims, pocketid.CustomClaim{Key: "rsi_citizen_record", Value: r})
-	}
+	verifiedAt := time.Now().UTC().Format(time.RFC3339)
+	claims := mergeManagedClaims(detail.CustomClaims, buildRSIClaims(vt.RSIHandle, verifiedAt, profile))
 	if err := s.pid.SetCustomClaims(ctx, userID, claims); err != nil {
 		return fmt.Errorf("set custom claims: %w", err)
 	}
@@ -283,7 +311,7 @@ type statusResponse struct {
 }
 
 func (s *Server) handleVerifyStatus(w http.ResponseWriter, r *http.Request) {
-	user, err := s.resolveAuthenticatedUser(w, r)
+	user, err := s.resolveAuthenticatedUser(r)
 	if err != nil {
 		writeJSON(w, http.StatusOK, statusResponse{})
 		return
@@ -402,14 +430,7 @@ func (s *Server) handleVerifyRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claims := []pocketid.CustomClaim{
-		{Key: "rsi_handle", Value: handle},
-		{Key: "rsi_verified_at", Value: verifiedAt},
-		{Key: "rsi_enlisted", Value: parseEnlistDate(profile.Enlisted)},
-	}
-	if cr := strings.TrimSpace(profile.CitizenRecord); cr != "" && strings.ToLower(cr) != "n/a" {
-		claims = append(claims, pocketid.CustomClaim{Key: "rsi_citizen_record", Value: cr})
-	}
+	claims := mergeManagedClaims(detail.CustomClaims, buildRSIClaims(handle, verifiedAt, profile))
 
 	if err := s.pid.SetCustomClaims(r.Context(), user.ID, claims); err != nil {
 		slog.ErrorContext(r.Context(), "refresh: set custom claims", "err", err)
@@ -482,7 +503,7 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 
 	slog.InfoContext(r.Context(), "account deleted", "user_id", user.ID)
 	auditLog(r.Context(), "account.deleted", "user_id", user.ID, "username", user.Username)
-	s.clearSessionFromRequest(w, r)
+	s.clearSessionFromRequest(r)
 	w.WriteHeader(http.StatusNoContent)
 }
 

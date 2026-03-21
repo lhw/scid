@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -131,17 +132,31 @@ func validateCreateAppRequest(req createAppRequest) string {
 
 // isValidCallbackURL returns true for https:// URLs and http://localhost or 127.0.0.1 URLs.
 // Wildcards are explicitly rejected.
-func isValidCallbackURL(u string) bool {
-	if strings.Contains(u, "*") {
+func isValidCallbackURL(raw string) bool {
+	if strings.Contains(raw, "*") {
 		return false
 	}
-	if strings.HasPrefix(u, "https://") {
-		return true
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return false
 	}
-	if strings.HasPrefix(u, "http://localhost") || strings.HasPrefix(u, "http://127.0.0.1") {
-		return true
+	if parsed.Opaque != "" || parsed.User != nil || parsed.Fragment != "" {
+		return false
 	}
-	return false
+	if parsed.Scheme == "" || parsed.Host == "" || parsed.Hostname() == "" {
+		return false
+	}
+
+	switch parsed.Scheme {
+	case "https":
+		return true
+	case "http":
+		hostname := strings.ToLower(parsed.Hostname())
+		return hostname == "localhost" || hostname == "127.0.0.1"
+	default:
+		return false
+	}
 }
 
 // buildOIDCClientParams maps a createAppRequest to Pocket ID params.
@@ -161,6 +176,30 @@ func buildOIDCClientParams(req createAppRequest) pocketid.OIDCClientParams {
 		IsPublic:           req.IsPublic,
 		PkceEnabled:        req.PkceRequired,
 		CallbackURLs:       req.RedirectURIs,
+		LogoutCallbackURLs: logoutURIs,
+	}
+}
+
+func oidcClientParamsFromClient(client *pocketid.OIDCClient) pocketid.OIDCClientParams {
+	var launchURL *string
+	if client.LaunchURL != nil {
+		u := *client.LaunchURL
+		launchURL = &u
+	}
+	logoutURIs := client.LogoutCallbackURLs
+	if logoutURIs == nil {
+		logoutURIs = []string{}
+	}
+	callbackURLs := client.CallbackURLs
+	if callbackURLs == nil {
+		callbackURLs = []string{}
+	}
+	return pocketid.OIDCClientParams{
+		Name:               client.Name,
+		LaunchURL:          launchURL,
+		IsPublic:           client.IsPublic,
+		PkceEnabled:        client.PkceEnabled,
+		CallbackURLs:       callbackURLs,
 		LogoutCallbackURLs: logoutURIs,
 	}
 }
@@ -363,9 +402,9 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		OIDCClientID: client.ID,
 		OwnerUserID:  user.ID,
 		VerifiedOnly: req.VerifiedOnly,
-		// Only list if auto-approved (pending apps won't appear until approved anyway,
-		// but we store the intent so it activates on approval).
-		Listed:    req.Listed && status == "approved",
+		// Persist listing intent even while pending; the directory already filters
+		// for approved apps only.
+		Listed:    req.Listed,
 		Status:    status,
 		CreatedAt: time.Now().UTC(),
 	}
@@ -458,6 +497,23 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
+	if req.Listed && reg.Status != "approved" {
+		writeError(w, http.StatusUnprocessableEntity, "app must be approved before listing in the directory")
+		return
+	}
+
+	previousClient, err := s.pid.GetOIDCClient(r.Context(), clientID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "get oidc client before update failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	rollbackOIDCClient := func() {
+		if _, revertErr := s.pid.UpdateOIDCClient(r.Context(), clientID, oidcClientParamsFromClient(previousClient)); revertErr != nil {
+			slog.ErrorContext(r.Context(), "revert oidc client failed", "client_id", clientID, "err", revertErr)
+		}
+	}
 
 	params := buildOIDCClientParams(req)
 	client, err := s.pid.UpdateOIDCClient(r.Context(), clientID, params)
@@ -467,18 +523,35 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update verified_only if it changed.
+	verifiedOnlyUpdated := false
+	listedUpdated := false
+	rollbackState := func() {
+		if listedUpdated {
+			if revertErr := s.store.UpdateAppRegistrationListed(r.Context(), clientID, !req.Listed); revertErr != nil {
+				slog.ErrorContext(r.Context(), "revert listed failed", "client_id", clientID, "err", revertErr)
+			}
+		}
+		if verifiedOnlyUpdated {
+			if revertErr := s.store.UpdateAppRegistrationVerifiedOnly(r.Context(), clientID, !req.VerifiedOnly); revertErr != nil {
+				slog.ErrorContext(r.Context(), "revert verified_only failed", "client_id", clientID, "err", revertErr)
+			}
+			if revertErr := s.syncOIDCClientAccess(r, clientID, reg.Status, !req.VerifiedOnly); revertErr != nil {
+				slog.ErrorContext(r.Context(), "revert client access failed", "client_id", clientID, "err", revertErr)
+			}
+		}
+		rollbackOIDCClient()
+	}
+
 	if req.VerifiedOnly != reg.VerifiedOnly {
-		previousVerifiedOnly := reg.VerifiedOnly
 		if err := s.store.UpdateAppRegistrationVerifiedOnly(r.Context(), clientID, req.VerifiedOnly); err != nil {
+			rollbackOIDCClient()
 			slog.ErrorContext(r.Context(), "update app registration verified_only failed", "client_id", clientID, "err", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+		verifiedOnlyUpdated = true
 		if err := s.syncOIDCClientAccess(r, clientID, reg.Status, req.VerifiedOnly); err != nil {
-			if revertErr := s.store.UpdateAppRegistrationVerifiedOnly(r.Context(), clientID, previousVerifiedOnly); revertErr != nil {
-				slog.ErrorContext(r.Context(), "revert verified_only failed", "client_id", clientID, "err", revertErr)
-			}
+			rollbackState()
 			slog.ErrorContext(r.Context(), "sync client access failed after verified_only update", "client_id", clientID, "status", reg.Status, "verified_only", req.VerifiedOnly, "err", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
@@ -486,17 +559,14 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		reg.VerifiedOnly = req.VerifiedOnly
 	}
 
-	// Update listed flag if it changed; require approved status and launch_url.
 	if req.Listed != reg.Listed {
-		if req.Listed && reg.Status != "approved" {
-			writeError(w, http.StatusUnprocessableEntity, "app must be approved before listing in the directory")
-			return
-		}
 		if err := s.store.UpdateAppRegistrationListed(r.Context(), clientID, req.Listed); err != nil {
+			rollbackState()
 			slog.ErrorContext(r.Context(), "update app registration listed failed", "client_id", clientID, "err", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
+		listedUpdated = true
 		reg.Listed = req.Listed
 	}
 
