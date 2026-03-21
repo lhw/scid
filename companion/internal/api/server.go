@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -23,6 +24,8 @@ type Server struct {
 	store   *store.Store
 	pid     *pocketid.Client
 	scraper *rsi.Scraper
+	limiter *rateLimiter
+	sessions *sessionManager
 	router  *chi.Mux
 }
 
@@ -33,6 +36,8 @@ func New(cfg *config.Config, st *store.Store) *Server {
 		store:   st,
 		pid:     pocketid.New(cfg.PocketIDInternalURL, cfg.PocketIDAdminAPIKey),
 		scraper: rsi.New(),
+		limiter: newRateLimiter(),
+		sessions: newSessionManager(cfg.SessionSecretKey),
 	}
 	s.router = s.buildRouter()
 	return s
@@ -61,8 +66,6 @@ func (s *Server) buildRouter() *chi.Mux {
 		MaxAge:           300,
 	}))
 
-	// TODO: add rate limiting middleware before public launch.
-
 	// /metrics is served on the companion's internal port only and is not
 	// proxied through Caddy — safe for Prometheus scraping within the stack.
 	r.Mount("/metrics", prometheusHandler())
@@ -72,7 +75,9 @@ func (s *Server) buildRouter() *chi.Mux {
 	r.Get("/api/verify/status", s.handleVerifyStatus)
 	// Signup token — public endpoint that creates a 1-use Pocket ID registration token.
 	// The frontend uses the token to redirect new users to Pocket ID's /signup page.
-	r.Post("/api/auth/signup-token", s.handleSignupToken)
+	r.With(s.publicRateLimitMiddleware("signup-token", 5, time.Minute)).Post("/api/auth/signup-token", s.handleSignupToken)
+	r.With(s.publicRateLimitMiddleware("auth-callback", 20, 10*time.Minute)).Post("/api/auth/callback", s.handleAuthCallback)
+	r.Post("/api/auth/logout", s.handleAuthLogout)
 	// Org logo — serves cached org logos by SID (public, browser-cached).
 	r.Get("/api/orgs/{sid}/logo", s.handleOrgLogo)
 	// Public app directory — lists approved apps that have opted into the directory.
@@ -80,11 +85,11 @@ func (s *Server) buildRouter() *chi.Mux {
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.bearerAuthMiddleware)
-		r.Post("/api/verify/start", s.handleVerifyStart)
-		r.Post("/api/verify/confirm", s.handleVerifyConfirm)
-		r.Post("/api/verify/refresh", s.handleVerifyRefresh)
+		r.With(s.authenticatedRateLimitMiddleware("verify-start", 6, 10*time.Minute)).Post("/api/verify/start", s.handleVerifyStart)
+		r.With(s.authenticatedRateLimitMiddleware("verify-confirm", 12, 10*time.Minute)).Post("/api/verify/confirm", s.handleVerifyConfirm)
+		r.With(s.authenticatedRateLimitMiddleware("verify-refresh", 6, time.Hour)).Post("/api/verify/refresh", s.handleVerifyRefresh)
 		r.Post("/api/account/delete", s.handleDeleteAccount)
-		r.Post("/api/apps", s.handleCreateApp)
+		r.With(s.authenticatedRateLimitMiddleware("apps-create", 10, time.Hour)).Post("/api/apps", s.handleCreateApp)
 		r.Get("/api/apps", s.handleListApps)
 		r.Get("/api/apps/{id}", s.handleGetApp)
 		r.Put("/api/apps/{id}", s.handleUpdateApp)
@@ -146,15 +151,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // and stores the resolved *pocketid.User in the request context.
 func (s *Server) bearerAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := extractBearerToken(r)
-		if token == "" {
-			writeError(w, http.StatusUnauthorized, "missing or invalid Authorization header")
-			return
-		}
-
-		user, err := s.pid.GetCurrentUser(r.Context(), token)
+		user, err := s.resolveAuthenticatedUser(w, r)
 		if err != nil {
-			slog.WarnContext(r.Context(), "bearer auth failed", "err", err)
+			if !errors.Is(err, errMissingAuth) {
+				slog.WarnContext(r.Context(), "session auth failed", "err", err)
+			}
 			writeError(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}

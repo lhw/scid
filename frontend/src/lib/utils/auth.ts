@@ -3,19 +3,12 @@
  *
  * Flow:
  *  1. login(returnPath)     — generate PKCE params, redirect to Pocket ID /authorize
- *  2. handleCallback(...)   — exchange code for access token, store in sessionStorage
- *  3. getAccessToken()      — return stored token for use in fetch calls
+ *  2. handleCallback(...)   — exchange code via the companion backend, which sets an httpOnly session cookie
+ *  3. logout()              — clears the backend session cookie
  */
 
-// These are baked in at build time by SvelteKit / Vite.
-// Set PUBLIC_POCKET_ID_URL and PUBLIC_OIDC_CLIENT_ID in your .env file.
-import * as staticPublic from '$env/static/public';
-const _env = staticPublic as unknown as Record<string, string | undefined>;
+import { PUBLIC_OIDC_CLIENT_ID, PUBLIC_POCKET_ID_URL } from '$lib/utils/public-env';
 
-const POCKET_ID_URL = _env.PUBLIC_POCKET_ID_URL ?? 'https://id.scid.my';
-const CLIENT_ID = _env.PUBLIC_OIDC_CLIENT_ID ?? 'scid-frontend';
-
-const TOKEN_KEY = 'scid_access_token';
 const VERIFIER_KEY = 'scid_pkce_verifier';
 const STATE_KEY = 'scid_oauth_state';
 
@@ -40,24 +33,6 @@ async function generateChallenge(verifier: string): Promise<string> {
   return base64url(hash);
 }
 
-// ── Token storage ─────────────────────────────────────────────────────────────
-// The access token lives in localStorage so it survives tab closes and new
-// tabs.  The PKCE verifier and state use sessionStorage because they are
-// short-lived, per-flow values that must not bleed across browser sessions.
-
-export function getAccessToken(): string | null {
-  if (typeof localStorage === 'undefined') return null;
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setAccessToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearAccessToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
-}
-
 // ── Auth flow ─────────────────────────────────────────────────────────────────
 
 /**
@@ -76,7 +51,7 @@ export async function login(returnPath = '/verify'): Promise<void> {
   const redirectUri = `${window.location.origin}/callback`;
   const params = new URLSearchParams({
     response_type: 'code',
-    client_id: CLIENT_ID,
+    client_id: PUBLIC_OIDC_CLIENT_ID,
     redirect_uri: redirectUri,
     scope: 'openid profile email',
     code_challenge: challenge,
@@ -84,12 +59,13 @@ export async function login(returnPath = '/verify'): Promise<void> {
     state,
   });
 
-  window.location.href = `${POCKET_ID_URL}/authorize?${params}`;
+  window.location.href = `${PUBLIC_POCKET_ID_URL}/authorize?${params}`;
 }
 
 /**
  * Complete the PKCE flow after Pocket ID redirects back to /callback.
- * Validates state, exchanges code for tokens, stores the access token.
+ * Validates state and asks the companion backend to exchange the code and set
+ * an httpOnly session cookie.
  * @returns the returnPath that was passed to login()
  */
 export async function handleCallback(code: string, state: string): Promise<string> {
@@ -106,14 +82,10 @@ export async function handleCallback(code: string, state: string): Promise<strin
   sessionStorage.removeItem(STATE_KEY);
   sessionStorage.removeItem(VERIFIER_KEY);
 
-  const redirectUri = `${window.location.origin}/callback`;
-  const res = await fetch(`${POCKET_ID_URL}/api/oidc/token`, {
+  const res = await fetch('/api/auth/callback', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: CLIENT_ID,
-      redirect_uri: redirectUri,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
       code,
       code_verifier: verifier,
     }),
@@ -124,13 +96,14 @@ export async function handleCallback(code: string, state: string): Promise<strin
     throw new Error(body.error_description ?? body.error ?? `Token exchange failed (${res.status})`);
   }
 
-  const data = await res.json() as { access_token: string };
-  setAccessToken(data.access_token);
-
   try {
     const parsed = JSON.parse(atob(state)) as { returnPath?: string };
     return parsed.returnPath ?? '/';
   } catch {
     return '/';
   }
+}
+
+export async function logout(): Promise<void> {
+  await fetch('/api/auth/logout', { method: 'POST' });
 }

@@ -33,13 +33,6 @@ export interface ConfirmVerifyResponse {
   message?: string;
 }
 
-import { getAccessToken } from "./auth.js";
-
-function authHeader(): Record<string, string> {
-  const token = getAccessToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 // Request a one-use Pocket ID signup token so the frontend can redirect a new
 // user to Pocket ID's /signup page. Pass the Cloudflare Turnstile challenge
 // response token when captcha validation is enabled on the backend.
@@ -59,7 +52,7 @@ export async function getSignupToken(turnstileToken?: string): Promise<string> {
 export async function getVerifyStatus(
   fetch: typeof globalThis.fetch,
 ): Promise<VerifyStatus> {
-  const res = await fetch("/api/verify/status", { headers: authHeader() });
+  const res = await fetch("/api/verify/status");
   if (!res.ok) throw new Error(`Status ${res.status}`);
   return res.json();
 }
@@ -70,7 +63,7 @@ export async function startVerify(
 ): Promise<StartVerifyResponse> {
   const res = await fetch("/api/verify/start", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeader() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ handle }),
   });
   if (!res.ok) {
@@ -84,7 +77,6 @@ export async function startVerify(
 export async function confirmVerify(): Promise<ConfirmVerifyResponse> {
   const res = await fetch("/api/verify/confirm", {
     method: "POST",
-    headers: authHeader(),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
@@ -98,7 +90,6 @@ export async function confirmVerify(): Promise<ConfirmVerifyResponse> {
 export async function refreshVerify(): Promise<VerifyStatus> {
   const res = await fetch("/api/verify/refresh", {
     method: "POST",
-    headers: authHeader(),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
@@ -111,7 +102,6 @@ export async function refreshVerify(): Promise<VerifyStatus> {
 export async function deleteAccount(): Promise<void> {
   const res = await fetch("/api/account/delete", {
     method: "POST",
-    headers: authHeader(),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
@@ -159,7 +149,7 @@ export interface DirectoryApp {
 }
 
 export async function listApps(): Promise<AppRegistration[]> {
-  const res = await fetch("/api/apps", { headers: authHeader() });
+  const res = await fetch("/api/apps");
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
     throw new Error(err.error ?? `Status ${res.status}`);
@@ -179,7 +169,7 @@ export async function listPublicApps(): Promise<DirectoryApp[]> {
 export async function createApp(req: CreateAppRequest): Promise<AppRegistration> {
   const res = await fetch("/api/apps", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeader() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
   if (!res.ok) {
@@ -190,7 +180,7 @@ export async function createApp(req: CreateAppRequest): Promise<AppRegistration>
 }
 
 export async function getApp(id: string): Promise<AppRegistration> {
-  const res = await fetch(`/api/apps/${encodeURIComponent(id)}`, { headers: authHeader() });
+  const res = await fetch(`/api/apps/${encodeURIComponent(id)}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
     throw new Error(err.error ?? `Status ${res.status}`);
@@ -201,7 +191,7 @@ export async function getApp(id: string): Promise<AppRegistration> {
 export async function updateApp(id: string, req: Partial<CreateAppRequest>): Promise<AppRegistration> {
   const res = await fetch(`/api/apps/${encodeURIComponent(id)}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json", ...authHeader() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
   if (!res.ok) {
@@ -214,7 +204,6 @@ export async function updateApp(id: string, req: Partial<CreateAppRequest>): Pro
 export async function deleteApp(id: string): Promise<void> {
   const res = await fetch(`/api/apps/${encodeURIComponent(id)}`, {
     method: "DELETE",
-    headers: authHeader(),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
@@ -225,7 +214,6 @@ export async function deleteApp(id: string): Promise<void> {
 export async function rotateSecret(id: string): Promise<{ client_secret: string }> {
   const res = await fetch(`/api/apps/${encodeURIComponent(id)}/secret`, {
     method: "POST",
-    headers: authHeader(),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
@@ -239,7 +227,6 @@ export async function uploadAppLogo(id: string, file: File): Promise<void> {
   form.append("file", file);
   const res = await fetch(`/api/apps/${encodeURIComponent(id)}/logo`, {
     method: "PUT",
-    headers: authHeader(),
     body: form,
   });
   if (!res.ok) {
@@ -252,7 +239,7 @@ export async function uploadAppLogo(id: string, file: File): Promise<void> {
 
 export async function adminListApps(status?: string): Promise<AppRegistration[]> {
   const url = status ? `/api/admin/apps?status=${encodeURIComponent(status)}` : "/api/admin/apps";
-  const res = await fetch(url, { headers: authHeader() });
+  const res = await fetch(url);
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
     throw new Error(err.error ?? `Status ${res.status}`);
@@ -263,7 +250,6 @@ export async function adminListApps(status?: string): Promise<AppRegistration[]>
 export async function adminApproveApp(id: string): Promise<AppRegistration> {
   const res = await fetch(`/api/admin/apps/${encodeURIComponent(id)}/approve`, {
     method: "POST",
-    headers: authHeader(),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
@@ -275,7 +261,7 @@ export async function adminApproveApp(id: string): Promise<AppRegistration> {
 export async function adminRejectApp(id: string, reason?: string): Promise<AppRegistration> {
   const res = await fetch(`/api/admin/apps/${encodeURIComponent(id)}/reject`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeader() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reason: reason ?? "" }),
   });
   if (!res.ok) {

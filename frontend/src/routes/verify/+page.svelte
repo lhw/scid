@@ -1,23 +1,12 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { untrack } from 'svelte';
   import { startVerify, confirmVerify } from '$lib/utils/api.js';
-  import { getAccessToken, login } from '$lib/utils/auth.js';
+  import { login } from '$lib/utils/auth.js';
   import { CircleCheckBig, CircleX, Copy, Check, LoaderCircle, LogIn, UserPlus } from '@lucide/svelte';
   import type { PageData } from './$types';
-  import { PUBLIC_POCKET_ID_URL } from '$env/static/public';
 
   let { data }: { data: PageData } = $props();
-
-  // Show a login gate until we confirm there's a token in storage.
-  // Starts as null (unknown) then resolves to true/false in onMount.
-  let authenticated = $state<boolean | null>(null);
-  onMount(() => {
-    authenticated = getAccessToken() !== null;
-    // If we already have a token but status says authenticated, use server signal too
-    if (!authenticated && data.status?.authenticated) authenticated = true;
-  });
 
   type Step = 'handle' | 'token' | 'confirming' | 'success' | 'failed';
 
@@ -26,6 +15,7 @@
 
   // Snapshot page data once at init time (data prop may be a proxy — read eagerly)
   const initStatus = untrack(() => data.status);
+  let authenticated = $state(initStatus?.authenticated === true);
   const pendingStatus = initStatus && !initStatus.verified && initStatus.pending_handle
     ? initStatus
     : null;

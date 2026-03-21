@@ -1,7 +1,9 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -234,6 +236,58 @@ func (s *Server) setVerifiedOnlyGroups(r *http.Request, clientID string, verifie
 	return err
 }
 
+func (s *Server) syncOIDCClientAccess(r *http.Request, clientID, status string, verifiedOnly bool) error {
+	policy, err := resolveOIDCClientAccessPolicy(status, verifiedOnly)
+	if err != nil {
+		return err
+	}
+
+	switch policy {
+	case oidcClientAccessPending:
+		return s.setPendingGroups(r, clientID)
+	case oidcClientAccessVerifiedOnly:
+		return s.setVerifiedOnlyGroups(r, clientID, true)
+	case oidcClientAccessOpen:
+		return s.setVerifiedOnlyGroups(r, clientID, false)
+	default:
+		return fmt.Errorf("unknown oidc access policy %q", policy)
+	}
+}
+
+const (
+	oidcClientAccessPending      = "pending"
+	oidcClientAccessVerifiedOnly = "verified-only"
+	oidcClientAccessOpen         = "open"
+)
+
+func resolveOIDCClientAccessPolicy(status string, verifiedOnly bool) (string, error) {
+	switch status {
+	case "", "approved":
+		if verifiedOnly {
+			return oidcClientAccessVerifiedOnly, nil
+		}
+		return oidcClientAccessOpen, nil
+	case "pending", "rejected":
+		return oidcClientAccessPending, nil
+	default:
+		return "", fmt.Errorf("unsupported app status %q", status)
+	}
+}
+
+func detectLogoContentType(imageData []byte) (string, bool) {
+	contentType := http.DetectContentType(imageData)
+	switch contentType {
+	case "image/png", "image/jpeg", "image/webp":
+		return contentType, true
+	case "application/octet-stream":
+		if len(imageData) >= 12 && bytes.Equal(imageData[:4], []byte("RIFF")) && bytes.Equal(imageData[8:12], []byte("WEBP")) {
+			return "image/webp", true
+		}
+	}
+
+	return "", false
+}
+
 // --- POST /api/apps ---
 
 func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
@@ -296,21 +350,12 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	status := "approved"
 	if s.cfg.RequireAppApproval {
 		status = "pending"
-		// Restrict the client to a sentinel group so no real user can log in until approved.
-		if err := s.setPendingGroups(r, client.ID); err != nil {
-			slog.ErrorContext(r.Context(), "set pending groups failed", "client_id", client.ID, "err", err)
-			_ = s.pid.DeleteOIDCClient(r.Context(), client.ID)
-			writeError(w, http.StatusInternalServerError, "internal error")
-			return
-		}
-	} else if req.VerifiedOnly {
-		// Auto-approved path: apply verified_only restriction immediately.
-		if err := s.setVerifiedOnlyGroups(r, client.ID, true); err != nil {
-			slog.ErrorContext(r.Context(), "set verified-only groups failed", "client_id", client.ID, "err", err)
-			_ = s.pid.DeleteOIDCClient(r.Context(), client.ID)
-			writeError(w, http.StatusInternalServerError, "internal error")
-			return
-		}
+	}
+	if err := s.syncOIDCClientAccess(r, client.ID, status, req.VerifiedOnly); err != nil {
+		slog.ErrorContext(r.Context(), "set initial client access failed", "client_id", client.ID, "status", status, "verified_only", req.VerifiedOnly, "err", err)
+		_ = s.pid.DeleteOIDCClient(r.Context(), client.ID)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
 	}
 
 	reg := &store.AppRegistration{
@@ -424,13 +469,17 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 
 	// Update verified_only if it changed.
 	if req.VerifiedOnly != reg.VerifiedOnly {
-		if err := s.setVerifiedOnlyGroups(r, clientID, req.VerifiedOnly); err != nil {
-			slog.ErrorContext(r.Context(), "update verified-only groups failed", "client_id", clientID, "err", err)
+		previousVerifiedOnly := reg.VerifiedOnly
+		if err := s.store.UpdateAppRegistrationVerifiedOnly(r.Context(), clientID, req.VerifiedOnly); err != nil {
+			slog.ErrorContext(r.Context(), "update app registration verified_only failed", "client_id", clientID, "err", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
-		if err := s.store.UpdateAppRegistrationVerifiedOnly(r.Context(), clientID, req.VerifiedOnly); err != nil {
-			slog.ErrorContext(r.Context(), "update app registration verified_only failed", "client_id", clientID, "err", err)
+		if err := s.syncOIDCClientAccess(r, clientID, reg.Status, req.VerifiedOnly); err != nil {
+			if revertErr := s.store.UpdateAppRegistrationVerifiedOnly(r.Context(), clientID, previousVerifiedOnly); revertErr != nil {
+				slog.ErrorContext(r.Context(), "revert verified_only failed", "client_id", clientID, "err", revertErr)
+			}
+			slog.ErrorContext(r.Context(), "sync client access failed after verified_only update", "client_id", clientID, "status", reg.Status, "verified_only", req.VerifiedOnly, "err", err)
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
@@ -535,21 +584,12 @@ func (s *Server) handleUploadLogo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, header, err := r.FormFile("file")
+	file, _, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "missing file field")
 		return
 	}
 	defer file.Close()
-
-	contentType := header.Header.Get("Content-Type")
-	switch contentType {
-	case "image/png", "image/jpeg", "image/webp", "image/svg+xml":
-		// accepted
-	default:
-		writeError(w, http.StatusBadRequest, "unsupported image type; use PNG, JPEG, WebP, or SVG")
-		return
-	}
 
 	imageData, err := io.ReadAll(io.LimitReader(file, maxLogoSize+1))
 	if err != nil {
@@ -558,6 +598,12 @@ func (s *Server) handleUploadLogo(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(imageData) > maxLogoSize {
 		writeError(w, http.StatusRequestEntityTooLarge, "logo must be 1 MB or smaller")
+		return
+	}
+
+	contentType, ok := detectLogoContentType(imageData)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "unsupported image type; use PNG, JPEG, or WebP")
 		return
 	}
 
@@ -652,24 +698,18 @@ func (s *Server) handleApproveApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Apply correct group restriction now that the app is approved.
-	if reg.VerifiedOnly {
-		if err := s.setVerifiedOnlyGroups(r, clientID, true); err != nil {
-			slog.ErrorContext(r.Context(), "approve: set verified-only groups failed", "client_id", clientID, "err", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
-			return
-		}
-	} else {
-		// Remove all group restrictions — any user can log in.
-		if _, err := s.pid.SetOIDCClientAllowedGroups(r.Context(), clientID, []string{}); err != nil {
-			slog.ErrorContext(r.Context(), "approve: remove group restrictions failed", "client_id", clientID, "err", err)
-			writeError(w, http.StatusInternalServerError, "internal error")
-			return
-		}
-	}
-
+	previousStatus := reg.Status
+	previousReason := reg.RejectionReason
 	if err := s.store.UpdateAppRegistrationStatus(r.Context(), clientID, "approved", ""); err != nil {
 		slog.ErrorContext(r.Context(), "approve: update status failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if err := s.syncOIDCClientAccess(r, clientID, "approved", reg.VerifiedOnly); err != nil {
+		if revertErr := s.store.UpdateAppRegistrationStatus(r.Context(), clientID, previousStatus, previousReason); revertErr != nil {
+			slog.ErrorContext(r.Context(), "approve: revert status failed", "client_id", clientID, "err", revertErr)
+		}
+		slog.ErrorContext(r.Context(), "approve: sync client access failed", "client_id", clientID, "verified_only", reg.VerifiedOnly, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -720,8 +760,8 @@ func (s *Server) handleRejectApp(w http.ResponseWriter, r *http.Request) {
 	var req rejectRequest
 	_ = json.NewDecoder(r.Body).Decode(&req) // reason is optional
 
-	// Ensure the client remains restricted (apply pending sentinel group).
-	if err := s.setPendingGroups(r, clientID); err != nil {
+	// Ensure the client remains restricted.
+	if err := s.syncOIDCClientAccess(r, clientID, "rejected", reg.VerifiedOnly); err != nil {
 		slog.WarnContext(r.Context(), "reject: re-apply pending groups failed", "client_id", clientID, "err", err)
 		// Non-fatal: continue with rejection.
 	}

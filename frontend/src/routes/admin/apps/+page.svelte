@@ -177,13 +177,16 @@
   <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
     onclick={(e) => { if (e.target === e.currentTarget) showRejectModal = false; }}
+    onkeydown={(e) => { if (e.key === 'Escape') showRejectModal = false; }}
     role="dialog"
     aria-modal="true"
+    tabindex="-1"
   >
     <div class="w-full max-w-md rounded-2xl border border-[#1e3a5f] bg-[#0d1526] p-6 shadow-xl">
       <h2 class="mb-4 text-base font-semibold text-[#e2e8f0]">Reject Application</h2>
-      <label class="mb-1.5 block text-sm text-[#e2e8f0]/70">Reason (optional)</label>
+      <label for="reject-reason" class="mb-1.5 block text-sm text-[#e2e8f0]/70">Reason (optional)</label>
       <textarea
+        id="reject-reason"
         bind:value={rejectReason}
         rows="3"
         placeholder="Explain why this application was rejected…"

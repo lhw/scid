@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -224,6 +225,38 @@ type SignupToken struct {
 	ExpiresAt  time.Time `json:"expiresAt"`
 	UsageLimit int       `json:"usageLimit"`
 	UsageCount int       `json:"usageCount"`
+}
+
+// TokenResponse is returned by the OIDC token endpoint.
+type TokenResponse struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int    `json:"expires_in"`
+}
+
+// ExchangeAuthorizationCode exchanges an authorization code plus PKCE verifier
+// for an access token.
+func (c *Client) ExchangeAuthorizationCode(ctx context.Context, clientID, redirectURI, code, codeVerifier string) (*TokenResponse, error) {
+	form := url.Values{
+		"grant_type":    {"authorization_code"},
+		"client_id":     {clientID},
+		"redirect_uri":  {redirectURI},
+		"code":          {code},
+		"code_verifier": {codeVerifier},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/api/oidc/token", strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	var token TokenResponse
+	if err := c.do(req, &token); err != nil {
+		return nil, fmt.Errorf("exchange auth code: %w", err)
+	}
+	return &token, nil
 }
 
 // CreateSignupToken creates a 1-use signup token that expires in 1 hour.
@@ -483,7 +516,7 @@ func (c *Client) SetOIDCClientAllowedGroups(ctx context.Context, id string, grou
 }
 
 // SetOIDCClientLogo uploads a logo image for an OIDC client.
-// imageData must be PNG, JPEG, or SVG; maxiumum 2 MB as enforced by Pocket ID.
+// imageData must be PNG, JPEG, or WebP; maxiumum 2 MB as enforced by Pocket ID.
 func (c *Client) SetOIDCClientLogo(ctx context.Context, id string, imageData []byte, contentType string) error {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)

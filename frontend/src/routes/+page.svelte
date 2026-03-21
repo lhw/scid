@@ -1,13 +1,14 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import type { PageData } from './$types';
   import { toast } from 'svelte-sonner';
-  import { PUBLIC_POCKET_ID_URL } from '$env/static/public';
+  import { PUBLIC_POCKET_ID_URL } from '$lib/utils/public-env';
   import { refreshVerify, deleteAccount } from '$lib/utils/api';
-  import { clearAccessToken } from '$lib/utils/auth';
 
   let { data }: { data: PageData } = $props();
 
-  let status = $state(data.status);
+  const initialStatus = untrack(() => data.status);
+  let status = $state(initialStatus);
   let refreshing = $state(false);
   let deleting = $state(false);
   let showDeleteConfirm = $state(false);
@@ -30,9 +31,6 @@
     deleting = true;
     try {
       await deleteAccount();
-      // Wipe all local session data so no stale token survives the redirect.
-      clearAccessToken();
-      sessionStorage.clear();
       toast.success('Account deleted');
       setTimeout(() => {
         window.location.href = '/';

@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { getSignupToken } from '$lib/utils/api.js';
-  import { PUBLIC_POCKET_ID_URL, PUBLIC_TURNSTILE_SITE_KEY } from '$env/static/public';
+  import { PUBLIC_POCKET_ID_URL, PUBLIC_TURNSTILE_SITE_KEY } from '$lib/utils/public-env';
   import { UserPlus, LoaderCircle, ShieldCheck, LogIn } from '@lucide/svelte';
 
   let turnstileToken = $state('');

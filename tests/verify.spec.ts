@@ -28,10 +28,12 @@ test.describe('Verification wizard page — unauthenticated', () => {
 
 test.describe('Verification wizard page — authenticated', () => {
   test.beforeEach(async ({ page }) => {
-    // Inject a fake access token so the login gate is bypassed.
-    // The API calls will fail (fake token), but the wizard UI should render.
-    await page.addInitScript(() => {
-      sessionStorage.setItem('scid_access_token', 'fake-token-for-ui-test');
+    await page.route('**/api/verify/status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ authenticated: true, verified: false })
+      });
     });
     await page.goto('/verify');
   });

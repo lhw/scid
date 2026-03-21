@@ -279,14 +279,7 @@ type statusResponse struct {
 }
 
 func (s *Server) handleVerifyStatus(w http.ResponseWriter, r *http.Request) {
-	// If no valid Bearer token, return an unauthenticated-but-OK response so
-	// the home page can render without the user being logged in.
-	token := extractBearerToken(r)
-	if token == "" {
-		writeJSON(w, http.StatusOK, statusResponse{})
-		return
-	}
-	user, err := s.pid.GetCurrentUser(r.Context(), token)
+	user, err := s.resolveAuthenticatedUser(w, r)
 	if err != nil {
 		writeJSON(w, http.StatusOK, statusResponse{})
 		return
@@ -477,6 +470,7 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 
 	slog.InfoContext(r.Context(), "account deleted", "user_id", user.ID)
 	auditLog(r.Context(), "account.deleted", "user_id", user.ID, "username", user.Username)
+	s.clearSessionFromRequest(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 

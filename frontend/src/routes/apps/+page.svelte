@@ -25,6 +25,8 @@
   let formLogoFile = $state<File | null>(null);
   let formErrors = $state<Record<string, string>>({});
 
+  const allowedLogoTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
+
   onMount(async () => {
     if (!data.status?.verified) {
       loading = false;
@@ -123,6 +125,20 @@
     formLogoFile = null;
     formErrors = {};
   }
+
+  function handleLogoSelection(e: Event) {
+    const file = (e.target as HTMLInputElement).files?.[0] ?? null;
+    if (!file) {
+      formLogoFile = null;
+      return;
+    }
+    if (!allowedLogoTypes.has(file.type)) {
+      formLogoFile = null;
+      toast.error('Logo must be a PNG, JPEG, or WebP image');
+      return;
+    }
+    formLogoFile = file;
+  }
 </script>
 
 <div class="mx-auto w-full max-w-3xl px-6 py-16">
@@ -161,10 +177,11 @@
         <div class="space-y-5">
           <!-- Name -->
           <div>
-            <label class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">
+            <label for="app-name" class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">
               Application Name <span class="text-red-400">*</span>
             </label>
             <input
+              id="app-name"
               type="text"
               bind:value={formName}
               maxlength="50"
@@ -176,8 +193,9 @@
 
           <!-- Launch URL -->
           <div>
-            <label class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Launch URL</label>
+            <label for="app-launch-url" class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Launch URL</label>
             <input
+              id="app-launch-url"
               type="url"
               bind:value={formLaunchURL}
               placeholder="https://example.com"
@@ -188,9 +206,9 @@
 
           <!-- Redirect URIs -->
           <div>
-            <label class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">
+            <p class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">
               Redirect URIs <span class="text-red-400">*</span>
-            </label>
+            </p>
             <div class="space-y-2">
               {#each formRedirectURIs as uri, i}
                 <div class="flex gap-2">
@@ -227,7 +245,7 @@
 
           <!-- Logout URIs -->
           <div>
-            <label class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Logout Redirect URIs</label>
+            <p class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Logout Redirect URIs</p>
             <div class="space-y-2">
               {#each formLogoutURIs as uri, i}
                 <div class="flex gap-2">
@@ -293,8 +311,8 @@
           <label class="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-[#1e3a5f] bg-[#0a0e1a] p-3 hover:border-[#00d4ff]/50">
             <input
               type="file"
-              accept="image/png,image/jpeg,image/webp,image/svg+xml"
-              onchange={(e) => { formLogoFile = (e.target as HTMLInputElement).files?.[0] ?? null; }}
+              accept="image/png,image/jpeg,image/webp"
+              onchange={handleLogoSelection}
               class="sr-only"
             />
             <span class="text-sm text-[#e2e8f0]/50">

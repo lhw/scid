@@ -31,6 +31,8 @@ services:
       DATABASE_PATH: /data/scid.db
       POCKET_ID_INTERNAL_URL: http://pocket-id:1411
       POCKET_ID_ADMIN_API_KEY: ${POCKET_ID_ADMIN_API_KEY}
+      SCID_SECRET_KEY: ${SCID_SECRET_KEY}
+      PUBLIC_OIDC_CLIENT_ID: ${PUBLIC_OIDC_CLIENT_ID}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
     volumes:
       - companion-data:/data

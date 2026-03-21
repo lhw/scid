@@ -1,5 +1,4 @@
-import { getVerifyStatus, listApps } from "$lib/utils/api";
-import { getAccessToken } from "$lib/utils/auth";
+import { getVerifyStatus } from "$lib/utils/api";
 
 export async function load({ fetch }) {
   try {

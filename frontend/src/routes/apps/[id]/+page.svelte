@@ -13,7 +13,7 @@
 
   let { data }: { data: PageData } = $props();
 
-  const appId = data.id as string;
+  let appId = $derived(data.id as string);
 
   let app = $state<AppRegistration | null>(null);
   let loading = $state(true);
@@ -24,6 +24,7 @@
   let rotating = $state(false);
   let savingEdit = $state(false);
   let uploadingLogo = $state(false);
+  const allowedLogoTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
   // Once-shown secret (from URL after create, or after rotation)
   let shownSecret = $state('');
@@ -151,6 +152,11 @@
     const input = e.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
+    if (!allowedLogoTypes.has(file.type)) {
+      toast.error('Logo must be a PNG, JPEG, or WebP image');
+      input.value = '';
+      return;
+    }
     if (file.size > 1 << 20) {
       toast.error('Logo must be 1 MB or smaller');
       return;
@@ -212,7 +218,7 @@
             class="absolute -bottom-1 -right-1 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full border border-[#1e3a5f] bg-[#0d1526] text-[#e2e8f0]/40 transition-colors hover:text-[#00d4ff]"
             title="Upload logo"
           >
-            <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" onchange={handleLogoUpload} class="sr-only" />
+            <input type="file" accept="image/png,image/jpeg,image/webp" onchange={handleLogoUpload} class="sr-only" />
             {#if uploadingLogo}
               <span class="h-3 w-3 animate-spin rounded-full border border-[#00d4ff] border-t-transparent"></span>
             {:else}
@@ -326,21 +332,21 @@
         <h2 class="mb-5 text-base font-semibold text-[#e2e8f0]">Edit Application</h2>
         <div class="space-y-4">
           <div>
-            <label class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Name</label>
-            <input type="text" bind:value={editName} maxlength="50"
+            <label for="edit-app-name" class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Name</label>
+            <input id="edit-app-name" type="text" bind:value={editName} maxlength="50"
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30" />
             {#if editErrors.name}<p class="mt-1 text-xs text-red-400">{editErrors.name}</p>{/if}
           </div>
 
           <div>
-            <label class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Launch URL</label>
-            <input type="url" bind:value={editLaunchURL} placeholder="https://example.com"
+            <label for="edit-app-launch-url" class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Launch URL</label>
+            <input id="edit-app-launch-url" type="url" bind:value={editLaunchURL} placeholder="https://example.com"
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30" />
             {#if editErrors.launchURL}<p class="mt-1 text-xs text-red-400">{editErrors.launchURL}</p>{/if}
           </div>
 
           <div>
-            <label class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Redirect URIs</label>
+            <p class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Redirect URIs</p>
             <div class="space-y-2">
               {#each editRedirectURIs as uri, i}
                 <div class="flex gap-2">
@@ -367,7 +373,7 @@
           </div>
 
           <div>
-            <label class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Logout URIs</label>
+            <p class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Logout URIs</p>
             <div class="space-y-2">
               {#each editLogoutURIs as uri, i}
                 <div class="flex gap-2">

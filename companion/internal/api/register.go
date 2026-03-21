@@ -9,7 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
+
+var turnstileHTTPClient = &http.Client{Timeout: 5 * time.Second}
 
 type signupTokenRequest struct {
 	TurnstileToken string `json:"turnstile_token"`
@@ -77,7 +80,7 @@ func validateTurnstile(ctx context.Context, secret, token, remoteIP string) erro
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := turnstileHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("http: %w", err)
 	}

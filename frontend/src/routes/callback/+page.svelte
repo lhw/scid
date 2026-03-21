@@ -25,9 +25,6 @@
 
     try {
       const returnPath = await handleCallback(code, state);
-      // Use a full-page navigation so the layout re-mounts and picks up the
-      // newly-stored token.  A client-side goto() would keep the layout
-      // mounted, causing the auth-state onMount check to never re-run.
       window.location.replace(returnPath);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Authentication failed.';

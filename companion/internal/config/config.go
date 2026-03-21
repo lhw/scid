@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"time"
 )
 
 // Config holds all configuration loaded from environment variables.
@@ -18,6 +19,15 @@ type Config struct {
 
 	// PocketIDAdminAPIKey is the admin API key for Pocket ID.
 	PocketIDAdminAPIKey string
+
+	// OIDCClientID is the frontend client ID used in the Pocket ID auth flow.
+	OIDCClientID string
+
+	// SessionSecretKey signs companion-managed session cookies.
+	SessionSecretKey string
+
+	// SessionTTL is the maximum lifetime of a companion-managed login session.
+	SessionTTL time.Duration
 
 	// RequireAppApproval controls whether newly registered OIDC clients require
 	// admin approval before they become active.  Defaults to true.
@@ -37,12 +47,23 @@ func Load() (*Config, error) {
 		DatabasePath:        getEnv("DATABASE_PATH", "/data/scid.db"),
 		PocketIDInternalURL: getEnv("POCKET_ID_INTERNAL_URL", "http://pocket-id:3000"),
 		PocketIDAdminAPIKey: os.Getenv("POCKET_ID_ADMIN_API_KEY"),
+		OIDCClientID:        getEnv("PUBLIC_OIDC_CLIENT_ID", "scid-frontend"),
+		SessionSecretKey:    os.Getenv("SCID_SECRET_KEY"),
 		RequireAppApproval:  getEnv("APP_REQUIRE_APPROVAL", "true") != "false",
 		TurnstileSecretKey:  os.Getenv("TURNSTILE_SECRET_KEY"),
 	}
 
+	sessionTTL, err := time.ParseDuration(getEnv("SCID_SESSION_TTL", "12h"))
+	if err != nil {
+		return nil, fmt.Errorf("parse SCID_SESSION_TTL: %w", err)
+	}
+	cfg.SessionTTL = sessionTTL
+
 	if cfg.PocketIDAdminAPIKey == "" {
 		return nil, fmt.Errorf("POCKET_ID_ADMIN_API_KEY environment variable is required")
+	}
+	if cfg.SessionSecretKey == "" {
+		return nil, fmt.Errorf("SCID_SECRET_KEY environment variable is required")
 	}
 
 	return cfg, nil

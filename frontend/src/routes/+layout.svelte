@@ -3,25 +3,32 @@
   import { ModeWatcher } from 'mode-watcher';
   import { Toaster } from 'svelte-sonner';
   import { onMount } from 'svelte';
-  import { getAccessToken, clearAccessToken } from '$lib/utils/auth';
+  import { logout } from '$lib/utils/auth';
   import { getVerifyStatus } from '$lib/utils/api';
-  import { PUBLIC_POCKET_ID_URL } from '$env/static/public';
+  import { PUBLIC_POCKET_ID_URL } from '$lib/utils/public-env';
 
   let { children } = $props();
   let isAuthenticated = $state(false);
   let isAdmin = $state(false);
 
   onMount(async () => {
-    isAuthenticated = getAccessToken() !== null;
-    if (isAuthenticated) {
-      try {
-        const status = await getVerifyStatus(fetch);
-        isAdmin = status.admin === true;
-      } catch {
-        // Non-fatal; admin link will simply not appear.
-      }
+    try {
+      const status = await getVerifyStatus(fetch);
+      isAuthenticated = status.authenticated === true;
+      isAdmin = status.admin === true;
+    } catch {
+      isAuthenticated = false;
+      isAdmin = false;
     }
   });
+
+  async function handleSignOut() {
+    try {
+      await logout();
+    } finally {
+      window.location.href = '/';
+    }
+  }
 </script>
 
 <svelte:head>
@@ -66,6 +73,13 @@
           >
             Manage Account
           </a>
+          <button
+            type="button"
+            onclick={handleSignOut}
+            class="text-sm text-[#e2e8f0]/60 transition-colors hover:text-[#00d4ff]"
+          >
+            Sign Out
+          </button>
         </div>
       {/if}
     </div>
