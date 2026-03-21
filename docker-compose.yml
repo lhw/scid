@@ -74,7 +74,11 @@ services:
   caddy:
     build:
       context: ./caddy
-      dockerfile: Dockerfile
+      dockerfile_inline: |
+        FROM caddy:2-builder AS builder
+        RUN xcaddy build --with github.com/caddyserver/replace-response --with github.com/caddy-dns/cloudflare
+        FROM caddy:2-alpine
+        COPY --from=builder /usr/bin/caddy /usr/bin/caddy
     restart: unless-stopped
     ports:
       - "0.0.0.0:80:80"
