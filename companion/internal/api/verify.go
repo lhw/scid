@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/lhw/scid/companion/internal/pocketid"
@@ -203,23 +204,59 @@ func (s *Server) completeVerification(
 	claims := []pocketid.CustomClaim{
 		{Key: "rsi_handle", Value: vt.RSIHandle},
 		{Key: "rsi_verified_at", Value: time.Now().UTC().Format(time.RFC3339)},
-		{Key: "rsi_citizen_record", Value: profile.CitizenRecord},
-		{Key: "rsi_enlisted", Value: profile.Enlisted},
+		{Key: "rsi_enlisted", Value: parseEnlistDate(profile.Enlisted)},
+	}
+	if r := strings.TrimSpace(profile.CitizenRecord); r != "" && strings.ToLower(r) != "n/a" {
+		claims = append(claims, pocketid.CustomClaim{Key: "rsi_citizen_record", Value: r})
+	}
+	if profile.AvatarURL != "" {
+		claims = append(claims, pocketid.CustomClaim{Key: "rsi_avatar_url", Value: profile.AvatarURL})
 	}
 	if err := s.pid.SetCustomClaims(ctx, userID, claims); err != nil {
 		return fmt.Errorf("set custom claims: %w", err)
 	}
 
+	if profile.AvatarURL != "" {
+		if err := s.pid.SetProfilePicture(ctx, userID, profile.AvatarURL); err != nil {
+			// Non-fatal: log and continue without failing the whole verification.
+			slog.WarnContext(ctx, "failed to upload profile picture", "err", err)
+		}
+	}
+
 	return nil
+}
+
+// parseEnlistDate converts an RSI enlistment date string like "Apr 16, 2023"
+// into ISO 8601 date format "2023-04-16". Returns the original string if it
+// cannot be parsed.
+func parseEnlistDate(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return s
+	}
+	// Try the format RSI uses: "Jan 2, 2006"
+	if t, err := time.Parse("Jan 2, 2006", s); err == nil {
+		return t.Format("2006-01-02")
+	}
+	// Already looks like ISO format
+	if len(s) == 10 && s[4] == '-' {
+		return s
+	}
+	return s
 }
 
 // --- GET /api/verify/status ---
 
 type statusResponse struct {
 	Authenticated    bool       `json:"authenticated"`
+	UserID           string     `json:"user_id,omitempty"`
+	Username         string     `json:"username,omitempty"`
 	Verified         bool       `json:"verified"`
 	Handle           string     `json:"handle,omitempty"`
 	VerifiedAt       string     `json:"verified_at,omitempty"`
+	AvatarURL        string     `json:"avatar_url,omitempty"`
+	Enlisted         string     `json:"enlisted,omitempty"`
+	CitizenRecord    string     `json:"citizen_record,omitempty"`
 	PendingHandle    string     `json:"pending_handle,omitempty"`
 	PendingExpiresAt *time.Time `json:"pending_expires_at,omitempty"`
 }
@@ -238,7 +275,11 @@ func (s *Server) handleVerifyStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := statusResponse{Authenticated: true}
+	resp := statusResponse{
+		Authenticated: true,
+		UserID:        user.ID,
+		Username:      user.Username,
+	}
 
 	pending, err := s.store.GetTokenByUserID(r.Context(), user.ID)
 	if err != nil && err != store.ErrNotFound {
@@ -266,10 +307,104 @@ func (s *Server) handleVerifyStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// NOTE: rsi_handle is surfaced in OIDC token claims. A future iteration can
-	// add GET /api/custom-claims/user/:id to the Pocket ID client to also
-	// populate resp.Handle and resp.VerifiedAt here.
+	if resp.Verified {
+		// Populate claim fields from Pocket ID so the frontend can show the
+		// full profile without a second round-trip.
+		detail, err := s.pid.GetUser(r.Context(), user.ID)
+		if err != nil {
+			slog.WarnContext(r.Context(), "get user detail failed", "err", err)
+		} else {
+			for _, c := range detail.CustomClaims {
+				switch c.Key {
+				case "rsi_handle":
+					resp.Handle = c.Value
+				case "rsi_verified_at":
+					resp.VerifiedAt = c.Value
+				case "rsi_avatar_url":
+					resp.AvatarURL = c.Value
+				case "rsi_enlisted":
+					resp.Enlisted = c.Value
+				case "rsi_citizen_record":
+					resp.CitizenRecord = c.Value
+				}
+			}
+		}
+	}
 
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// --- POST /api/verify/refresh ---
+
+func (s *Server) handleVerifyRefresh(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+
+	detail, err := s.pid.GetUser(r.Context(), user.ID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "get user detail for refresh", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	var handle, verifiedAt string
+	for _, c := range detail.CustomClaims {
+		switch c.Key {
+		case "rsi_handle":
+			handle = c.Value
+		case "rsi_verified_at":
+			verifiedAt = c.Value
+		}
+	}
+	if handle == "" {
+		writeError(w, http.StatusBadRequest, "account not verified")
+		return
+	}
+
+	profile, err := s.scraper.FetchProfile(r.Context(), handle)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "refresh: fetch RSI profile", "handle", handle, "err", err)
+		writeError(w, http.StatusBadGateway, "could not fetch RSI profile")
+		return
+	}
+
+	claims := []pocketid.CustomClaim{
+		{Key: "rsi_handle", Value: handle},
+		{Key: "rsi_verified_at", Value: verifiedAt},
+		{Key: "rsi_enlisted", Value: parseEnlistDate(profile.Enlisted)},
+	}
+	if cr := strings.TrimSpace(profile.CitizenRecord); cr != "" && strings.ToLower(cr) != "n/a" {
+		claims = append(claims, pocketid.CustomClaim{Key: "rsi_citizen_record", Value: cr})
+	}
+	if profile.AvatarURL != "" {
+		claims = append(claims, pocketid.CustomClaim{Key: "rsi_avatar_url", Value: profile.AvatarURL})
+	}
+
+	if err := s.pid.SetCustomClaims(r.Context(), user.ID, claims); err != nil {
+		slog.ErrorContext(r.Context(), "refresh: set custom claims", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	if profile.AvatarURL != "" {
+		if err := s.pid.SetProfilePicture(r.Context(), user.ID, profile.AvatarURL); err != nil {
+			slog.WarnContext(r.Context(), "refresh: failed to upload profile picture", "err", err)
+		}
+	}
+
+	// Return the same shape as GET /api/verify/status for easy consumption.
+	resp := statusResponse{
+		Authenticated: true,
+		UserID:        user.ID,
+		Username:      user.Username,
+		Verified:      true,
+		Handle:        handle,
+		VerifiedAt:    verifiedAt,
+		AvatarURL:     profile.AvatarURL,
+		Enlisted:      parseEnlistDate(profile.Enlisted),
+	}
+	if cr := strings.TrimSpace(profile.CitizenRecord); cr != "" && strings.ToLower(cr) != "n/a" {
+		resp.CitizenRecord = cr
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 

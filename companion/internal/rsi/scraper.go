@@ -23,6 +23,7 @@ type Profile struct {
 	Bio           string
 	CitizenRecord string // e.g. "#40746"
 	Enlisted      string // e.g. "Oct 18, 2012"
+	AvatarURL     string // absolute URL to the user's RSI avatar image
 }
 
 // Scraper fetches and parses RSI public profile pages.
@@ -116,6 +117,12 @@ func parseProfile(handle string, doc *html.Node) *Profile {
 						p.CitizenRecord = strings.TrimSpace(value)
 					}
 				}
+
+			// Profile avatar: look for img tags inside known avatar containers.
+			case p.AvatarURL == "" && isAvatarContainer(n):
+				if src := findFirstImgSrc(n); src != "" {
+					p.AvatarURL = absoluteURL(src)
+				}
 			}
 		}
 
@@ -135,6 +142,15 @@ func parseProfile(handle string, doc *html.Node) *Profile {
 			if strings.Contains(lower, "enlisted") {
 				if p.Enlisted == "" {
 					p.Enlisted = strings.TrimSpace(extractText(n))
+				}
+			}
+
+			// Fallback avatar: any <img> whose src contains "/media/" and is
+			// plausibly a profile picture (not a banner/background image).
+			if p.AvatarURL == "" && n.Type == html.ElementNode && n.Data == "img" {
+				src := getAttr(n, "src")
+				if strings.Contains(src, "/media/") && !strings.Contains(src, "banner") {
+					p.AvatarURL = absoluteURL(src)
 				}
 			}
 		}
@@ -226,4 +242,35 @@ func extractLabelValue(n *html.Node) (label, value string) {
 		}
 	}
 	return
+}
+
+// isAvatarContainer returns true if the element is a known RSI avatar wrapper.
+func isAvatarContainer(n *html.Node) bool {
+	for _, class := range []string{"thumb", "profile-thumb", "avatar", "profile-pic", "profile-image", "overview-image"} {
+		if hasCSSClass(n, class) {
+			return true
+		}
+	}
+	return false
+}
+
+// findFirstImgSrc returns the src of the first <img> descendant.
+func findFirstImgSrc(n *html.Node) string {
+	if n.Type == html.ElementNode && n.Data == "img" {
+		return getAttr(n, "src")
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if src := findFirstImgSrc(c); src != "" {
+			return src
+		}
+	}
+	return ""
+}
+
+// absoluteURL turns a root-relative RSI path into an absolute URL.
+func absoluteURL(src string) string {
+	if strings.HasPrefix(src, "http") {
+		return src
+	}
+	return "https://robertsspaceindustries.com" + src
 }

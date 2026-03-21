@@ -318,8 +318,6 @@ Displays the authenticated user's current SCID state and allows them to refresh 
    - Returns updated claim values to the frontend
    - Shows a spinner while in-progress, a toast on success/failure
 
-3. **Danger zone** — "Unlink RSI Account" button (destructive, outlined red). Clears all `rsi_*` claims and removes the user from the `verified` group. Requires a confirmation dialog before proceeding.
-
 **Data loading:** The page load function calls `GET /api/verify/status` (already implemented) to populate the initial state. Re-verify refreshes state after completion.
 
 **Backend work needed (Phase 1 completion):**

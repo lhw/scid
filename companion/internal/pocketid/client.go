@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"time"
@@ -256,8 +257,9 @@ func (c *Client) CreateSignupToken(ctx context.Context) (*SignupToken, error) {
 	return &st, nil
 }
 
-// GetUser returns the Pocket ID user for the given user ID.
-func (c *Client) GetUser(ctx context.Context, userID string) (*User, error) {
+// GetUser returns the full Pocket ID user record for the given user ID.
+// The returned UserDetail includes custom claims and group memberships.
+func (c *Client) GetUser(ctx context.Context, userID string) (*UserDetail, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		c.baseURL+"/api/users/"+url.PathEscape(userID), nil)
 	if err != nil {
@@ -265,11 +267,66 @@ func (c *Client) GetUser(ctx context.Context, userID string) (*User, error) {
 	}
 	c.setAdminAuth(req)
 
-	var user User
-	if err := c.do(req, &user); err != nil {
+	var u UserDetail
+	if err := c.do(req, &u); err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
 	}
-	return &user, nil
+	return &u, nil
+}
+
+// UserDetail is the full Pocket ID user object returned by the admin API.
+type UserDetail struct {
+	ID           string        `json:"id"`
+	Username     string        `json:"username"`
+	Email        string        `json:"email"`
+	CustomClaims []CustomClaim `json:"customClaims"`
+}
+
+// SetProfilePicture downloads imageURL and uploads it as the Pocket ID profile
+// picture for the given user. The upload uses PUT /api/users/{id}/profile-picture
+// with a multipart/form-data body containing a field named "file".
+// A timeout longer than the default is used because the RSI CDN can be slow.
+func (c *Client) SetProfilePicture(ctx context.Context, userID, imageURL string) error {
+	// Fetch the image with a generous timeout.
+	fetchClient := &http.Client{Timeout: 15 * time.Second}
+	imgReq, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	if err != nil {
+		return fmt.Errorf("build image fetch request: %w", err)
+	}
+	imgReq.Header.Set("User-Agent", "SCID/1.0 (+https://scid.my)")
+	imgResp, err := fetchClient.Do(imgReq)
+	if err != nil {
+		return fmt.Errorf("fetch image: %w", err)
+	}
+	defer imgResp.Body.Close()
+	if imgResp.StatusCode >= 400 {
+		return fmt.Errorf("image fetch returned %d", imgResp.StatusCode)
+	}
+
+	// Build the multipart body in memory.
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, err := mw.CreateFormFile("file", "avatar.jpg")
+	if err != nil {
+		return fmt.Errorf("create form file: %w", err)
+	}
+	if _, err := io.Copy(part, imgResp.Body); err != nil {
+		return fmt.Errorf("copy image data: %w", err)
+	}
+	mw.Close()
+
+	uploadURL := c.baseURL + "/api/users/" + url.PathEscape(userID) + "/profile-picture"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, &buf)
+	if err != nil {
+		return fmt.Errorf("build upload request: %w", err)
+	}
+	c.setAdminAuth(req)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	if err := c.do(req, nil); err != nil {
+		return fmt.Errorf("upload profile picture: %w", err)
+	}
+	return nil
 }
 
 func (c *Client) setAdminAuth(req *http.Request) {

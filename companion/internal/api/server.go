@@ -72,6 +72,7 @@ func (s *Server) buildRouter() *chi.Mux {
 		r.Use(s.bearerAuthMiddleware)
 		r.Post("/api/verify/start", s.handleVerifyStart)
 		r.Post("/api/verify/confirm", s.handleVerifyConfirm)
+		r.Post("/api/verify/refresh", s.handleVerifyRefresh)
 	})
 
 	return r

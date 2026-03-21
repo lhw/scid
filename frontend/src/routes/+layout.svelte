@@ -26,15 +26,6 @@
         </span>
         <span class="text-xs text-[#e2e8f0]/50">Star Citizen Identity Provider</span>
       </a>
-
-      <nav>
-        <a
-          href="/verify"
-          class="rounded border border-[#00d4ff]/40 px-4 py-1.5 text-sm font-medium text-[#00d4ff] transition-colors hover:bg-[#00d4ff]/10"
-        >
-          Verify Identity
-        </a>
-      </nav>
     </div>
   </header>
 

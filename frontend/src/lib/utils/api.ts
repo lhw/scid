@@ -1,10 +1,15 @@
 export interface VerifyStatus {
   authenticated: boolean;
   verified: boolean;
-  handle: string;
-  verified_at: string;
-  pending_handle: string;
-  pending_expires_at: string;
+  user_id?: string;
+  username?: string;
+  handle?: string;
+  verified_at?: string;
+  avatar_url?: string;
+  enlisted?: string;
+  citizen_record?: string;
+  pending_handle?: string;
+  pending_expires_at?: string;
 }
 
 export interface StartVerifyResponse {
@@ -63,6 +68,20 @@ export async function startVerify(
 // Confirm verification (check that the token is in the RSI bio).
 export async function confirmVerify(): Promise<ConfirmVerifyResponse> {
   const res = await fetch("/api/verify/confirm", {
+    method: "POST",
+    headers: authHeader(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+  return res.json();
+}
+
+// Re-scrape the user's RSI profile and update stored claims (handle, avatar,
+// enlisted date, citizen record). Returns the updated status.
+export async function refreshVerify(): Promise<VerifyStatus> {
+  const res = await fetch("/api/verify/refresh", {
     method: "POST",
     headers: authHeader(),
   });
