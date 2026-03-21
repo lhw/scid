@@ -62,7 +62,9 @@ services:
   # Caddy — reverse proxy with static mkcert TLS (local dev)
   # ---------------------------------------------------------------------------
   caddy:
-    image: caddy:2-alpine
+    build:
+      context: ./caddy
+      dockerfile: Dockerfile
     restart: unless-stopped
     ports:
       - "0.0.0.0:80:80"

@@ -15,9 +15,29 @@
 }
 
 # Pocket ID — the main OIDC provider (login, passkeys, consent)
+# We inject a <style> block into every HTML response to hide the first name,
+# last name, and display name fields — Pocket ID has no native toggle for this.
 id.scid.my {
     tls /certs/scid.my+1.pem /certs/scid.my+1-key.pem
-    reverse_proxy pocket-id:1411
+
+    # Inject styles and a fixed "Return to SCID" back-button into every HTML page.
+    # Fields hidden: first name, last name, display name (Pocket ID has no toggle for these).
+    # Button: fixed top-LEFT so it does not overlap Pocket ID's dark-mode / profile icons.
+    replace {
+        match {
+            header Content-Type text/html*
+        }
+        # Hide unwanted form fields; style the back button.
+        # Button sits to the right, offset 10rem from edge to clear Pocket ID's native icons.
+        </head> "<style>div:has(>label[for=first-name]),div:has(>label[for=last-name]),div:has(>label[for=display-name]){display:none!important}#scid-back-btn{position:fixed;top:.75rem;right:10rem;z-index:9999;display:inline-flex;align-items:center;gap:.4rem;padding:.375rem .875rem;background:rgba(13,21,38,.92);border:1px solid rgba(0,212,255,.35);border-radius:.5rem;color:#00d4ff;font-family:inherit;font-size:.8125rem;font-weight:500;text-decoration:none;backdrop-filter:blur(8px);box-shadow:0 2px 12px rgba(0,0,0,.35);transition:background .15s,border-color .15s}#scid-back-btn:hover{background:rgba(0,212,255,.08);border-color:rgba(0,212,255,.65)}#scid-back-btn svg{width:1em;height:1em;flex-shrink:0}</style></head>"
+        # Inject the button as a sibling of SvelteKit's root div (outside its managed DOM).
+        </body> "<a href='https://scid.my' id='scid-back-btn'><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><line x1='19' y1='12' x2='5' y2='12'></line><polyline points='12 19 5 12 12 5'></polyline></svg>Return to SCID</a></body>"
+    }
+
+    # Disable upstream compression so the replace module can read the body.
+    reverse_proxy pocket-id:1411 {
+        header_up Accept-Encoding identity
+    }
 }
 
 # SCID — companion API + SvelteKit frontend

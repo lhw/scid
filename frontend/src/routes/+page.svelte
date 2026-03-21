@@ -2,12 +2,16 @@
   import type { PageData } from './$types';
   import { toast } from 'svelte-sonner';
   import { PUBLIC_POCKET_ID_URL } from '$env/static/public';
-  import { refreshVerify } from '$lib/utils/api';
+  import { refreshVerify, deleteAccount } from '$lib/utils/api';
+  import { clearAccessToken } from '$lib/utils/auth';
 
   let { data }: { data: PageData } = $props();
 
   let status = $state(data.status);
   let refreshing = $state(false);
+  let deleting = $state(false);
+  let showDeleteConfirm = $state(false);
+  let avatarLoadFailed = $state(false);
 
   async function handleRefresh() {
     refreshing = true;
@@ -21,6 +25,24 @@
     }
   }
 
+  async function handleDelete() {
+    deleting = true;
+    try {
+      await deleteAccount();
+      // Wipe all local session data so no stale token survives the redirect.
+      clearAccessToken();
+      sessionStorage.clear();
+      toast.success('Account deleted');
+      setTimeout(() => {
+        window.location.href = '/';
+      }, 600);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Account deletion failed');
+    } finally {
+      deleting = false;
+    }
+  }
+
   function profilePictureURL(): string {
     if (status?.user_id) return `${PUBLIC_POCKET_ID_URL}/api/users/${status.user_id}/profile-picture.png`;
     return '';
@@ -31,11 +53,12 @@
   <div class="mx-auto w-full max-w-2xl px-6 py-16">
     <div class="rounded-2xl border border-[#1e3a5f] bg-[#0d1526] p-8 shadow-[0_0_40px_rgba(0,212,255,0.05)]">
       <div class="mb-6 flex items-center gap-5">
-        {#if profilePictureURL()}
+        {#if profilePictureURL() && !avatarLoadFailed}
           <img
             src={profilePictureURL()}
             alt="RSI avatar"
             class="h-20 w-20 rounded-full border-2 border-[#00d4ff]/40 object-cover"
+            onerror={() => { avatarLoadFailed = true; }}
           />
         {:else}
           <div class="flex h-20 w-20 items-center justify-center rounded-full border-2 border-[#00d4ff]/30 bg-[#1e3a5f] text-3xl font-bold text-[#00d4ff]">
@@ -59,7 +82,7 @@
         {#if status.verified_at}
           <div class="rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-4 py-3">
             <dt class="mb-1 text-xs font-medium uppercase tracking-wider text-[#e2e8f0]/40">Verified</dt>
-            <dd class="text-sm text-[#e2e8f0]/80">{new Date(status.verified_at).toLocaleDateString()}</dd>
+            <dd class="text-sm text-[#e2e8f0]/80">{status.verified_at.slice(0, 10)}</dd>
           </div>
         {/if}
         {#if status.enlisted}
@@ -98,8 +121,76 @@
         </svg>
         {refreshing ? 'Refreshing…' : 'Refresh RSI info'}
       </button>
+
+      {#if showDeleteConfirm}
+        <div class="mt-4 flex items-center gap-3 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3">
+          <p class="flex-1 text-sm text-red-300/90"><strong>Warning:</strong> This will permanently delete your account. This cannot be undone.</p>
+          <button
+            onclick={handleDelete}
+            disabled={deleting}
+            class="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {deleting ? 'Deleting…' : 'Yes, delete'}
+          </button>
+          <button
+            onclick={() => (showDeleteConfirm = false)}
+            disabled={deleting}
+            class="rounded-lg border border-[#1e3a5f] px-4 py-1.5 text-sm text-[#e2e8f0]/60 transition-colors hover:text-[#e2e8f0]/90 disabled:cursor-not-allowed"
+          >
+            Cancel
+          </button>
+        </div>
+      {:else}
+        <button
+          onclick={() => (showDeleteConfirm = true)}
+          class="mt-3 text-xs text-red-400/60 transition-colors hover:text-red-400/90"
+        >
+          Delete account
+        </button>
+      {/if}
     </div>
   </div>
+
+  {#if status.orgs && status.orgs.length > 0}
+    <div class="mx-auto mt-6 w-full max-w-2xl px-6">
+      <div class="rounded-2xl border border-[#1e3a5f] bg-[#0d1526] p-6 shadow-[0_0_40px_rgba(0,212,255,0.04)]">
+        <h2 class="mb-4 text-xs font-medium uppercase tracking-wider text-[#e2e8f0]/40">RSI Organizations</h2>
+        <ul class="space-y-3">
+          {#each status.orgs as org}
+            <li class="flex items-center gap-3">
+              {#if org.has_logo}
+                <img
+                  src="/api/orgs/{org.sid}/logo"
+                  alt="{org.name ?? org.sid} logo"
+                  class="h-10 w-10 shrink-0 rounded border border-[#1e3a5f] object-contain bg-[#0a0e1a] p-0.5"
+                  onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
+              {:else}
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded border border-[#1e3a5f] bg-[#0a0e1a] font-mono text-xs font-bold text-[#00d4ff]/60">
+                  {(org.sid ?? '?').slice(0, 3)}
+                </div>
+              {/if}
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <span class="truncate text-sm font-medium text-[#e2e8f0]">{org.name || org.sid}</span>
+                  {#if org.is_main}
+                    <span class="shrink-0 rounded-full border border-[#00d4ff]/30 bg-[#00d4ff]/8 px-1.5 py-0.5 text-[10px] font-medium text-[#00d4ff]/80">Main</span>
+                  {/if}
+                </div>
+                <div class="flex items-center gap-2 text-[11px] text-[#e2e8f0]/40">
+                  <span class="font-mono">{org.sid}</span>
+                  {#if org.rank_name}
+                    <span>·</span>
+                    <span>{org.rank_name}</span>
+                  {/if}
+                </div>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    </div>
+  {/if}
 
 {:else}
   <div class="mx-auto w-full max-w-6xl px-6 py-16">
@@ -122,7 +213,7 @@
         href="/verify"
         class="inline-flex items-center gap-2 rounded-lg border border-[#00d4ff] bg-[#00d4ff]/10 px-8 py-3 text-base font-semibold text-[#00d4ff] shadow-[0_0_24px_rgba(0,212,255,0.15)] transition-all hover:bg-[#00d4ff]/20 hover:shadow-[0_0_32px_rgba(0,212,255,0.25)]"
       >
-        Verify Your RSI Identity
+        Create Your SCID
         <span aria-hidden="true">→</span>
       </a>
     </section>

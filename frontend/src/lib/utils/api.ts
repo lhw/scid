@@ -1,3 +1,11 @@
+export interface OrgEntry {
+  sid: string;
+  name?: string;
+  rank_name?: string;
+  is_main?: boolean;
+  has_logo?: boolean;
+}
+
 export interface VerifyStatus {
   authenticated: boolean;
   verified: boolean;
@@ -5,9 +13,9 @@ export interface VerifyStatus {
   username?: string;
   handle?: string;
   verified_at?: string;
-  avatar_url?: string;
   enlisted?: string;
   citizen_record?: string;
+  orgs?: OrgEntry[];
   pending_handle?: string;
   pending_expires_at?: string;
 }
@@ -91,3 +99,123 @@ export async function refreshVerify(): Promise<VerifyStatus> {
   }
   return res.json();
 }
+
+// Delete the user account from both SCID and Pocket ID. This is irreversible.
+export async function deleteAccount(): Promise<void> {
+  const res = await fetch("/api/account/delete", {
+    method: "POST",
+    headers: authHeader(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+}
+
+// ---- OIDC Application Registration ----
+
+export interface AppRegistration {
+  id: string;
+  client_secret?: string; // only present on create or rotate
+  name: string;
+  launch_url?: string;
+  redirect_uris: string[];
+  logout_uris: string[];
+  is_public: boolean;
+  pkce_required: boolean;
+  verified_only: boolean;
+  has_logo: boolean;
+  created_at: string;
+}
+
+export interface CreateAppRequest {
+  name: string;
+  launch_url?: string;
+  redirect_uris: string[];
+  logout_uris: string[];
+  is_public: boolean;
+  pkce_required: boolean;
+  verified_only: boolean;
+}
+
+export async function listApps(): Promise<AppRegistration[]> {
+  const res = await fetch("/api/apps", { headers: authHeader() });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function createApp(req: CreateAppRequest): Promise<AppRegistration> {
+  const res = await fetch("/api/apps", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getApp(id: string): Promise<AppRegistration> {
+  const res = await fetch(`/api/apps/${encodeURIComponent(id)}`, { headers: authHeader() });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function updateApp(id: string, req: Partial<CreateAppRequest>): Promise<AppRegistration> {
+  const res = await fetch(`/api/apps/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteApp(id: string): Promise<void> {
+  const res = await fetch(`/api/apps/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: authHeader(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+}
+
+export async function rotateSecret(id: string): Promise<{ client_secret: string }> {
+  const res = await fetch(`/api/apps/${encodeURIComponent(id)}/secret`, {
+    method: "POST",
+    headers: authHeader(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function uploadAppLogo(id: string, file: File): Promise<void> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`/api/apps/${encodeURIComponent(id)}/logo`, {
+    method: "PUT",
+    headers: authHeader(),
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+}
+

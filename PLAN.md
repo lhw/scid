@@ -292,50 +292,49 @@ RSI org SIDs are synced as Pocket ID groups with a `rsi:` prefix to avoid collis
 - [x] Build SCID companion service skeleton (Go)
 - [x] Implement RSI bio verification flow
 - [x] Scrape and store citizen record number and enlistment date from profile page
-- [x] Store verification results as Pocket ID custom claims via API
-- [x] Basic UI for verification wizard
-- [ ] Profile page with re-verification trigger
+- [x] Store verification results as Pocket ID custom claims via API (`rsi_handle`, `rsi_verified_at`, `rsi_citizen_record`, `rsi_enlisted`)
+- [x] RSI avatar scraped and uploaded to Pocket ID profile picture (`PUT /api/users/{id}/profile-picture`)
+- [x] Enlisted date stored as ISO 8601 (`2023-04-16`); `n/a` citizen record omitted
+- [x] Basic UI for verification wizard (`/verify`)
+- [x] Home page shows profile card when verified (avatar, handle, claims, Refresh button)
+- [x] `POST /api/verify/refresh` — refreshes RSI profile data and avatar without re-verification
+- [x] `GET /api/verify/status` returns full claim set (`user_id`, `username`, `handle`, `verified_at`, `enlisted`, `citizen_record`, `avatar_url`)
+- [x] Home page hero + feature cards shown when not verified; header "Verify Identity" button removed
 
 ---
 
-### Profile Page (`/profile`)
+### Profile Card (Home Page — `/`)
 
-Displays the authenticated user's current SCID state and allows them to refresh their RSI data on demand.
+The home page (`/`) is the profile hub for logged-in users. Implemented.
 
-**UI sections:**
+**Verified users see:**
+- Avatar (served from `{POCKET_ID_URL}/api/users/{id}/profile-picture.png` — RSI avatar uploaded on verification/refresh)
+- RSI handle + green "Verified" badge
+- Info grid: verified date, enlistment date, citizen record number
+- "Refresh RSI info" button — calls `POST /api/verify/refresh`, shows spinner + toast
 
-1. **Identity card** — glass card showing:
-   - RSI handle (or "Not verified" if absent)
-   - Verification status badge (`VerificationBadge` component)
-   - Citizen Record number
-   - Enlistment date
-   - Date last verified (`rsi_verified_at` claim)
+**Logged-in but unverified users see:**
+- Hero section with SCID branding
+- "Create Your RSI Identity" call-to-action button
+- Feature explanation cards
 
-2. **Re-verify button** — "Refresh RSI Data" button (teal, with a `RefreshCw` icon). Clicking it:
-   - Calls `POST /api/verify/refresh` on the companion (new endpoint, to be implemented)
-   - The endpoint re-scrapes the user's RSI profile (no bio token needed — handle is already known and trusted)
-   - Updates `rsi_citizen_record`, `rsi_enlisted`, and `rsi_verified_at` claims in Pocket ID
-   - Returns updated claim values to the frontend
-   - Shows a spinner while in-progress, a toast on success/failure
+**Unauthenticated users see:**
+- Same hero + feature cards (no user data shown)
 
-**Data loading:** The page load function calls `GET /api/verify/status` (already implemented) to populate the initial state. Re-verify refreshes state after completion.
-
-**Backend work needed (Phase 1 completion):**
-- `POST /api/verify/refresh` handler in `internal/api/verify.go`
-  - Authenticate via Bearer token (same middleware as existing endpoints)
-  - Look up stored `rsi_handle` claim via Pocket ID API
-  - Call `rsi.FetchProfile(ctx, handle)` — same scraper, no token check
-  - Call `pocketid.SetUserClaims(...)` with updated values
-  - Return `{handle, rsi_citizen_record, rsi_enlisted, rsi_verified_at}`
-- `DELETE /api/verify` handler (or `POST /api/verify/unlink`) for the unlink action
-  - Remove user from `verified` group
-  - Clear all `rsi_*` claims
+**Still to add:**
+- Delete account option (for users who want to permanently delete their account)
+  - `POST /api/account/delete` — permanently deletes user from Pocket ID and logs them out
 
 ### Phase 2: Client App Registration
-- [ ] Build self-service OIDC client registration
-- [ ] Admin approval workflow
-- [ ] Client management UI (view secrets, rotate, update URIs)
-- [ ] Integration documentation for fan site developers
+- [ ] `POST /api/apps` — create OIDC client via Pocket ID admin API (name, redirect URIs, homepage)
+- [ ] `GET /api/apps` — list requester's registered apps (filter by `owner_id` claim)
+- [ ] `GET /api/apps/{id}` — get single app + secret
+- [ ] `DELETE /api/apps/{id}` — delete app
+- [ ] `POST /api/apps/{id}/secret` — rotate client secret
+- [ ] Store owner metadata in companion DB (pocket_id client ID → SCID user ID)
+- [ ] `/apps` SvelteKit page — registration form + list of user's apps
+- [ ] `/apps/{id}` SvelteKit page — app detail, secret display (once), rotate, delete
+- [ ] (Optional) Admin approval workflow — create app in `pending` state, require admin confirm
 
 ### Phase 3: Polish & Hardening
 - [ ] Rate limiting on verification and API endpoints

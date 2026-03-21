@@ -329,6 +329,202 @@ func (c *Client) SetProfilePicture(ctx context.Context, userID, imageURL string)
 	return nil
 }
 
+// OIDCClientParams holds the fields for creating or updating an OIDC client.
+type OIDCClientParams struct {
+	Name               string   `json:"name"`
+	LaunchURL          *string  `json:"launchURL"`
+	IsPublic           bool     `json:"isPublic"`
+	PkceEnabled        bool     `json:"pkceEnabled"`
+	CallbackURLs       []string `json:"callbackURLs"`
+	LogoutCallbackURLs []string `json:"logoutCallbackURLs"`
+}
+
+// OIDCClient is returned by the Pocket ID admin API for OIDC client operations.
+// Note: the ID field is the OIDC client_id (the UUID clients use to authenticate).
+type OIDCClient struct {
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	LaunchURL          *string  `json:"launchURL"`
+	HasLogo            bool     `json:"hasLogo"`
+	IsPublic           bool     `json:"isPublic"`
+	PkceEnabled        bool     `json:"pkceEnabled"`
+	CallbackURLs       []string `json:"callbackURLs"`
+	LogoutCallbackURLs []string `json:"logoutCallbackURLs"`
+	IsGroupRestricted  bool     `json:"isGroupRestricted"`
+	AllowedUserGroups  []Group  `json:"allowedUserGroups"`
+}
+
+// oidcClientPage is the paginated OIDC clients list response.
+type oidcClientPage struct {
+	Data []OIDCClient `json:"data"`
+}
+
+// CreateOIDCClient creates a new OIDC client.
+// The returned client's ID is also the OIDC client_id.
+func (c *Client) CreateOIDCClient(ctx context.Context, params OIDCClientParams) (*OIDCClient, error) {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("marshal params: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/api/oidc/clients", bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	c.setAdminAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	var client OIDCClient
+	if err := c.do(req, &client); err != nil {
+		return nil, fmt.Errorf("create oidc client: %w", err)
+	}
+	return &client, nil
+}
+
+// GetOIDCClient retrieves an OIDC client by its internal ID.
+func (c *Client) GetOIDCClient(ctx context.Context, id string) (*OIDCClient, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.baseURL+"/api/oidc/clients/"+url.PathEscape(id), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	c.setAdminAuth(req)
+
+	var client OIDCClient
+	if err := c.do(req, &client); err != nil {
+		return nil, fmt.Errorf("get oidc client: %w", err)
+	}
+	return &client, nil
+}
+
+// UpdateOIDCClient updates an OIDC client by its internal ID.
+func (c *Client) UpdateOIDCClient(ctx context.Context, id string, params OIDCClientParams) (*OIDCClient, error) {
+	data, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("marshal params: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+		c.baseURL+"/api/oidc/clients/"+url.PathEscape(id), bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	c.setAdminAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	var client OIDCClient
+	if err := c.do(req, &client); err != nil {
+		return nil, fmt.Errorf("update oidc client: %w", err)
+	}
+	return &client, nil
+}
+
+// DeleteOIDCClient permanently deletes an OIDC client.
+func (c *Client) DeleteOIDCClient(ctx context.Context, id string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		c.baseURL+"/api/oidc/clients/"+url.PathEscape(id), nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	c.setAdminAuth(req)
+
+	if err := c.do(req, nil); err != nil {
+		return fmt.Errorf("delete oidc client: %w", err)
+	}
+	return nil
+}
+
+// RotateOIDCClientSecret generates a new client secret and returns it.
+// This is the only way to retrieve the secret — it is never stored by Pocket ID.
+func (c *Client) RotateOIDCClientSecret(ctx context.Context, id string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/api/oidc/clients/"+url.PathEscape(id)+"/secret", http.NoBody)
+	if err != nil {
+		return "", fmt.Errorf("build request: %w", err)
+	}
+	c.setAdminAuth(req)
+
+	var result struct {
+		Secret string `json:"secret"`
+	}
+	if err := c.do(req, &result); err != nil {
+		return "", fmt.Errorf("rotate oidc client secret: %w", err)
+	}
+	return result.Secret, nil
+}
+
+// SetOIDCClientAllowedGroups replaces the user groups allowed to use an OIDC
+// client. Pass an empty slice to remove all group restrictions.
+func (c *Client) SetOIDCClientAllowedGroups(ctx context.Context, id string, groupIDs []string) (*OIDCClient, error) {
+	if groupIDs == nil {
+		groupIDs = []string{}
+	}
+	body := struct {
+		UserGroupIDs []string `json:"userGroupIds"`
+	}{UserGroupIDs: groupIDs}
+
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("marshal body: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut,
+		c.baseURL+"/api/oidc/clients/"+url.PathEscape(id)+"/allowed-user-groups",
+		bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	c.setAdminAuth(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	var client OIDCClient
+	if err := c.do(req, &client); err != nil {
+		return nil, fmt.Errorf("set oidc client allowed groups: %w", err)
+	}
+	return &client, nil
+}
+
+// SetOIDCClientLogo uploads a logo image for an OIDC client.
+// imageData must be PNG, JPEG, or SVG; maxiumum 2 MB as enforced by Pocket ID.
+func (c *Client) SetOIDCClientLogo(ctx context.Context, id string, imageData []byte, contentType string) error {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, err := mw.CreateFormFile("file", "logo")
+	if err != nil {
+		return fmt.Errorf("create form file: %w", err)
+	}
+	if _, err := io.Copy(part, bytes.NewReader(imageData)); err != nil {
+		return fmt.Errorf("write image data: %w", err)
+	}
+	mw.Close()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.baseURL+"/api/oidc/clients/"+url.PathEscape(id)+"/logo", &buf)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	c.setAdminAuth(req)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	if err := c.do(req, nil); err != nil {
+		return fmt.Errorf("upload logo: %w", err)
+	}
+	return nil
+}
+
+// DeleteUser permanently deletes a user from Pocket ID.
+func (c *Client) DeleteUser(ctx context.Context, userID string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
+		c.baseURL+"/api/users/"+url.PathEscape(userID), nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	c.setAdminAuth(req)
+
+	if err := c.do(req, nil); err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) setAdminAuth(req *http.Request) {
 	req.Header.Set("X-API-Key", c.adminKey)
 }

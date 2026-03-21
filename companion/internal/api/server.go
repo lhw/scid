@@ -67,12 +67,22 @@ func (s *Server) buildRouter() *chi.Mux {
 	// Signup token — public endpoint that creates a 1-use Pocket ID registration token.
 	// The frontend uses the token to redirect new users to Pocket ID's /signup page.
 	r.Post("/api/auth/signup-token", s.handleSignupToken)
+	// Org logo — serves cached org logos by SID (public, browser-cached).
+	r.Get("/api/orgs/{sid}/logo", s.handleOrgLogo)
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.bearerAuthMiddleware)
 		r.Post("/api/verify/start", s.handleVerifyStart)
 		r.Post("/api/verify/confirm", s.handleVerifyConfirm)
 		r.Post("/api/verify/refresh", s.handleVerifyRefresh)
+		r.Post("/api/account/delete", s.handleDeleteAccount)
+		r.Post("/api/apps", s.handleCreateApp)
+		r.Get("/api/apps", s.handleListApps)
+		r.Get("/api/apps/{id}", s.handleGetApp)
+		r.Put("/api/apps/{id}", s.handleUpdateApp)
+		r.Delete("/api/apps/{id}", s.handleDeleteApp)
+		r.Post("/api/apps/{id}/secret", s.handleRotateSecret)
+		r.Put("/api/apps/{id}/logo", s.handleUploadLogo)
 	})
 
 	return r

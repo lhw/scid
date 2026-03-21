@@ -209,9 +209,6 @@ func (s *Server) completeVerification(
 	if r := strings.TrimSpace(profile.CitizenRecord); r != "" && strings.ToLower(r) != "n/a" {
 		claims = append(claims, pocketid.CustomClaim{Key: "rsi_citizen_record", Value: r})
 	}
-	if profile.AvatarURL != "" {
-		claims = append(claims, pocketid.CustomClaim{Key: "rsi_avatar_url", Value: profile.AvatarURL})
-	}
 	if err := s.pid.SetCustomClaims(ctx, userID, claims); err != nil {
 		return fmt.Errorf("set custom claims: %w", err)
 	}
@@ -222,6 +219,9 @@ func (s *Server) completeVerification(
 			slog.WarnContext(ctx, "failed to upload profile picture", "err", err)
 		}
 	}
+
+	// Sync org memberships in the background (non-fatal).
+	go s.syncUserOrgs(context.Background(), userID, vt.RSIHandle)
 
 	return nil
 }
@@ -254,9 +254,9 @@ type statusResponse struct {
 	Verified         bool       `json:"verified"`
 	Handle           string     `json:"handle,omitempty"`
 	VerifiedAt       string     `json:"verified_at,omitempty"`
-	AvatarURL        string     `json:"avatar_url,omitempty"`
 	Enlisted         string     `json:"enlisted,omitempty"`
 	CitizenRecord    string     `json:"citizen_record,omitempty"`
+	Orgs             []OrgEntry `json:"orgs,omitempty"`
 	PendingHandle    string     `json:"pending_handle,omitempty"`
 	PendingExpiresAt *time.Time `json:"pending_expires_at,omitempty"`
 }
@@ -320,14 +320,27 @@ func (s *Server) handleVerifyStatus(w http.ResponseWriter, r *http.Request) {
 					resp.Handle = c.Value
 				case "rsi_verified_at":
 					resp.VerifiedAt = c.Value
-				case "rsi_avatar_url":
-					resp.AvatarURL = c.Value
 				case "rsi_enlisted":
 					resp.Enlisted = c.Value
 				case "rsi_citizen_record":
 					resp.CitizenRecord = c.Value
 				}
 			}
+		}
+
+		// Populate org memberships from the local DB.
+		if userOrgs, err := s.store.GetUserOrgs(r.Context(), user.ID); err == nil {
+			for _, o := range userOrgs {
+				resp.Orgs = append(resp.Orgs, OrgEntry{
+					SID:      o.SID,
+					Name:     o.Name,
+					RankName: o.RankName,
+					IsMain:   o.IsMain,
+					HasLogo:  o.LogoPath != "",
+				})
+			}
+		} else {
+			slog.WarnContext(r.Context(), "get user orgs failed", "err", err)
 		}
 	}
 
@@ -375,9 +388,6 @@ func (s *Server) handleVerifyRefresh(w http.ResponseWriter, r *http.Request) {
 	if cr := strings.TrimSpace(profile.CitizenRecord); cr != "" && strings.ToLower(cr) != "n/a" {
 		claims = append(claims, pocketid.CustomClaim{Key: "rsi_citizen_record", Value: cr})
 	}
-	if profile.AvatarURL != "" {
-		claims = append(claims, pocketid.CustomClaim{Key: "rsi_avatar_url", Value: profile.AvatarURL})
-	}
 
 	if err := s.pid.SetCustomClaims(r.Context(), user.ID, claims); err != nil {
 		slog.ErrorContext(r.Context(), "refresh: set custom claims", "err", err)
@@ -391,6 +401,9 @@ func (s *Server) handleVerifyRefresh(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Sync org memberships synchronously during refresh so the response includes up-to-date orgs.
+	s.syncUserOrgs(r.Context(), user.ID, handle)
+
 	// Return the same shape as GET /api/verify/status for easy consumption.
 	resp := statusResponse{
 		Authenticated: true,
@@ -399,13 +412,39 @@ func (s *Server) handleVerifyRefresh(w http.ResponseWriter, r *http.Request) {
 		Verified:      true,
 		Handle:        handle,
 		VerifiedAt:    verifiedAt,
-		AvatarURL:     profile.AvatarURL,
 		Enlisted:      parseEnlistDate(profile.Enlisted),
 	}
 	if cr := strings.TrimSpace(profile.CitizenRecord); cr != "" && strings.ToLower(cr) != "n/a" {
 		resp.CitizenRecord = cr
 	}
+	if userOrgs, err := s.store.GetUserOrgs(r.Context(), user.ID); err == nil {
+		for _, o := range userOrgs {
+			resp.Orgs = append(resp.Orgs, OrgEntry{
+				SID:      o.SID,
+				Name:     o.Name,
+				RankName: o.RankName,
+				IsMain:   o.IsMain,
+				HasLogo:  o.LogoPath != "",
+			})
+		}
+	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// --- POST /api/account/delete ---
+
+func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+
+	// Delete the user from Pocket ID. This is irreversible.
+	if err := s.pid.DeleteUser(r.Context(), user.ID); err != nil {
+		slog.ErrorContext(r.Context(), "delete account: pocket id deletion failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	slog.InfoContext(r.Context(), "account deleted", "user_id", user.ID)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // --- helpers ---

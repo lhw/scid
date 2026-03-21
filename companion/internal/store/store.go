@@ -18,6 +18,35 @@ CREATE TABLE IF NOT EXISTS verification_tokens (
     created_at DATETIME NOT NULL DEFAULT (datetime('now')),
     expires_at DATETIME NOT NULL
 );
+
+-- org_cache stores RSI org metadata indexed by SID.
+-- logo_path is the filesystem path to the cached logo image (may be empty).
+CREATE TABLE IF NOT EXISTS org_cache (
+    sid TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    logo_path TEXT NOT NULL DEFAULT '',
+    fetched_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+-- user_orgs maps Pocket ID user IDs to their RSI org SIDs.
+-- is_main = 1 indicates the user's primary org.
+CREATE TABLE IF NOT EXISTS user_orgs (
+    pocket_id_user_id TEXT NOT NULL,
+    sid TEXT NOT NULL,
+    rank_name TEXT NOT NULL DEFAULT '',
+    is_main INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (pocket_id_user_id, sid)
+);
+
+-- app_registrations links Pocket ID OIDC client IDs to SCID owner users.
+-- verified_only = 1 means only users in the "verified" group can use this app.
+CREATE TABLE IF NOT EXISTS app_registrations (
+    id TEXT PRIMARY KEY,
+    oidc_client_id TEXT NOT NULL UNIQUE,
+    owner_user_id TEXT NOT NULL,
+    verified_only INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 // VerificationToken represents a row in the verification_tokens table.
@@ -141,3 +170,226 @@ func parseTime(s string) (time.Time, error) {
 
 // ErrNotFound is returned when a requested record does not exist.
 var ErrNotFound = fmt.Errorf("not found")
+
+// AppRegistration tracks which Pocket ID OIDC client belongs to which SCID user.
+type AppRegistration struct {
+	ID           string
+	OIDCClientID string
+	OwnerUserID  string
+	VerifiedOnly bool
+	CreatedAt    time.Time
+}
+
+// CreateAppRegistration inserts a new app registration row.
+func (s *Store) CreateAppRegistration(ctx context.Context, reg *AppRegistration) error {
+	const q = `
+INSERT INTO app_registrations (id, oidc_client_id, owner_user_id, verified_only, created_at)
+VALUES (?, ?, ?, ?, ?)`
+	verifiedOnly := 0
+	if reg.VerifiedOnly {
+		verifiedOnly = 1
+	}
+	_, err := s.db.ExecContext(ctx, q,
+		reg.ID, reg.OIDCClientID, reg.OwnerUserID, verifiedOnly,
+		reg.CreatedAt.UTC().Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("insert app registration: %w", err)
+	}
+	return nil
+}
+
+// GetAppRegistrationByClientID retrieves an app registration by Pocket ID client ID.
+// Returns ErrNotFound if no matching row exists.
+func (s *Store) GetAppRegistrationByClientID(ctx context.Context, oidcClientID string) (*AppRegistration, error) {
+	const q = `
+SELECT id, oidc_client_id, owner_user_id, verified_only, created_at
+FROM app_registrations
+WHERE oidc_client_id = ?`
+	return scanAppRegistration(s.db.QueryRowContext(ctx, q, oidcClientID))
+}
+
+// ListAppRegistrationsByOwner returns all app registrations for a given user.
+func (s *Store) ListAppRegistrationsByOwner(ctx context.Context, ownerUserID string) ([]AppRegistration, error) {
+	const q = `
+SELECT id, oidc_client_id, owner_user_id, verified_only, created_at
+FROM app_registrations
+WHERE owner_user_id = ?
+ORDER BY created_at ASC`
+	rows, err := s.db.QueryContext(ctx, q, ownerUserID)
+	if err != nil {
+		return nil, fmt.Errorf("query app registrations: %w", err)
+	}
+	defer rows.Close()
+
+	var result []AppRegistration
+	for rows.Next() {
+		reg, err := scanAppRegistrationRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *reg)
+	}
+	return result, rows.Err()
+}
+
+// DeleteAppRegistrationByClientID removes an app registration by OIDC client ID.
+func (s *Store) DeleteAppRegistrationByClientID(ctx context.Context, oidcClientID string) error {
+	const q = `DELETE FROM app_registrations WHERE oidc_client_id = ?`
+	if _, err := s.db.ExecContext(ctx, q, oidcClientID); err != nil {
+		return fmt.Errorf("delete app registration: %w", err)
+	}
+	return nil
+}
+
+// UpdateAppRegistrationVerifiedOnly updates the verified_only flag for an app.
+func (s *Store) UpdateAppRegistrationVerifiedOnly(ctx context.Context, oidcClientID string, verifiedOnly bool) error {
+	flag := 0
+	if verifiedOnly {
+		flag = 1
+	}
+	const q = `UPDATE app_registrations SET verified_only = ? WHERE oidc_client_id = ?`
+	if _, err := s.db.ExecContext(ctx, q, flag, oidcClientID); err != nil {
+		return fmt.Errorf("update app registration: %w", err)
+	}
+	return nil
+}
+
+func scanAppRegistration(row *sql.Row) (*AppRegistration, error) {
+	var reg AppRegistration
+	var verifiedOnly int
+	var createdAt string
+	err := row.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &createdAt)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("scan app registration: %w", err)
+	}
+	reg.VerifiedOnly = verifiedOnly == 1
+	reg.CreatedAt, _ = parseTime(createdAt)
+	return &reg, nil
+}
+
+func scanAppRegistrationRow(rows *sql.Rows) (*AppRegistration, error) {
+	var reg AppRegistration
+	var verifiedOnly int
+	var createdAt string
+	err := rows.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &createdAt)
+	if err != nil {
+		return nil, fmt.Errorf("scan app registration: %w", err)
+	}
+	reg.VerifiedOnly = verifiedOnly == 1
+	reg.CreatedAt, _ = parseTime(createdAt)
+	return &reg, nil
+}
+
+// OrgCacheEntry represents a row in the org_cache table.
+type OrgCacheEntry struct {
+	SID       string
+	Name      string
+	LogoPath  string
+	FetchedAt time.Time
+}
+
+// UserOrg represents a user's membership in an RSI org.
+type UserOrg struct {
+	PocketIDUserID string
+	SID            string
+	RankName       string
+	IsMain         bool
+}
+
+// UpsertOrgCache inserts or replaces an org cache entry.
+func (s *Store) UpsertOrgCache(ctx context.Context, e *OrgCacheEntry) error {
+	const q = `
+INSERT INTO org_cache (sid, name, logo_path, fetched_at)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(sid) DO UPDATE SET
+    name = excluded.name,
+    logo_path = excluded.logo_path,
+    fetched_at = excluded.fetched_at`
+	_, err := s.db.ExecContext(ctx, q,
+		e.SID, e.Name, e.LogoPath, e.FetchedAt.UTC().Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("upsert org cache: %w", err)
+	}
+	return nil
+}
+
+// GetOrgCache retrieves a cached org entry by SID. Returns ErrNotFound if missing.
+func (s *Store) GetOrgCache(ctx context.Context, sid string) (*OrgCacheEntry, error) {
+	const q = `SELECT sid, name, logo_path, fetched_at FROM org_cache WHERE sid = ?`
+	var e OrgCacheEntry
+	var fetchedAt string
+	err := s.db.QueryRowContext(ctx, q, sid).Scan(&e.SID, &e.Name, &e.LogoPath, &fetchedAt)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get org cache: %w", err)
+	}
+	e.FetchedAt, _ = parseTime(fetchedAt)
+	return &e, nil
+}
+
+// SetUserOrgs replaces all org memberships for a user.
+func (s *Store) SetUserOrgs(ctx context.Context, userID string, orgs []UserOrg) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM user_orgs WHERE pocket_id_user_id = ?`, userID); err != nil {
+		return fmt.Errorf("delete user orgs: %w", err)
+	}
+
+	for _, o := range orgs {
+		isMain := 0
+		if o.IsMain {
+			isMain = 1
+		}
+		const q = `INSERT INTO user_orgs (pocket_id_user_id, sid, rank_name, is_main) VALUES (?, ?, ?, ?)`
+		if _, err := tx.ExecContext(ctx, q, userID, o.SID, o.RankName, isMain); err != nil {
+			return fmt.Errorf("insert user org: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+// GetUserOrgs returns all org memberships for a user, joined with cached org info.
+// Orgs without a cache entry are included with an empty name/logo.
+type UserOrgDetail struct {
+	SID      string
+	Name     string
+	LogoPath string
+	RankName string
+	IsMain   bool
+}
+
+func (s *Store) GetUserOrgs(ctx context.Context, userID string) ([]UserOrgDetail, error) {
+	const q = `
+SELECT uo.sid, COALESCE(oc.name,''), COALESCE(oc.logo_path,''), uo.rank_name, uo.is_main
+FROM user_orgs uo
+LEFT JOIN org_cache oc ON oc.sid = uo.sid
+WHERE uo.pocket_id_user_id = ?
+ORDER BY uo.is_main DESC, uo.sid ASC`
+	rows, err := s.db.QueryContext(ctx, q, userID)
+	if err != nil {
+		return nil, fmt.Errorf("query user orgs: %w", err)
+	}
+	defer rows.Close()
+
+	var result []UserOrgDetail
+	for rows.Next() {
+		var d UserOrgDetail
+		var isMain int
+		if err := rows.Scan(&d.SID, &d.Name, &d.LogoPath, &d.RankName, &isMain); err != nil {
+			return nil, fmt.Errorf("scan user org: %w", err)
+		}
+		d.IsMain = isMain == 1
+		result = append(result, d)
+	}
+	return result, rows.Err()
+}
