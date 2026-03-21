@@ -20,23 +20,23 @@ import (
 
 // Server wires together dependencies and the HTTP router.
 type Server struct {
-	cfg     *config.Config
-	store   *store.Store
-	pid     *pocketid.Client
-	scraper *rsi.Scraper
-	limiter *rateLimiter
+	cfg      *config.Config
+	store    *store.Store
+	pid      *pocketid.Client
+	scraper  rsi.RSIScraper
+	limiter  *rateLimiter
 	sessions *sessionManager
-	router  *chi.Mux
+	router   *chi.Mux
 }
 
 // New creates a configured Server ready to serve HTTP.
 func New(cfg *config.Config, st *store.Store) *Server {
 	s := &Server{
-		cfg:     cfg,
-		store:   st,
-		pid:     pocketid.New(cfg.PocketIDInternalURL, cfg.PocketIDAdminAPIKey),
-		scraper: rsi.New(),
-		limiter: newRateLimiter(),
+		cfg:      cfg,
+		store:    st,
+		pid:      pocketid.New(cfg.PocketIDInternalURL, cfg.PocketIDAdminAPIKey),
+		scraper:  rsi.New(),
+		limiter:  newRateLimiter(),
 		sessions: newSessionManager(cfg.SessionSecretKey),
 	}
 	s.router = s.buildRouter()

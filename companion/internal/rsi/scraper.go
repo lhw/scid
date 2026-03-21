@@ -17,6 +17,13 @@ const (
 	userAgent             = "SCID-Companion/1.0 (Star Citizen Identity Provider; unofficial fansite tool)"
 )
 
+// RSIScraper is the interface for fetching RSI public profile and org data.
+// It is satisfied by *Scraper and can be replaced with a mock in tests.
+type RSIScraper interface {
+	FetchProfile(ctx context.Context, handle string) (*Profile, error)
+	FetchOrgs(ctx context.Context, handle string) ([]OrgInfo, error)
+}
+
 // Profile holds the fields we extract from a public RSI profile page.
 type Profile struct {
 	Handle        string

@@ -59,6 +59,15 @@ CREATE TABLE IF NOT EXISTS user_org_sync (
     handle TEXT NOT NULL,
     synced_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
+
+-- verified_handles records permanently which RSI handle each SCID user has
+-- verified. This ensures the uniqueness check works even after the transient
+-- verification_token row is deleted on success.
+CREATE TABLE IF NOT EXISTS verified_handles (
+    rsi_handle TEXT NOT NULL PRIMARY KEY,
+    pocket_id_user_id TEXT NOT NULL UNIQUE,
+    verified_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 // migrations adds columns that were introduced after initial schema creation.
@@ -160,14 +169,46 @@ WHERE pocket_id_user_id = ?`
 // HandleIsLinkedToOtherUser reports whether the given RSI handle is already
 // linked to a different SCID user than excludeUserID.
 func (s *Store) HandleIsLinkedToOtherUser(ctx context.Context, handle, excludeUserID string) (bool, error) {
-	const q = `
-SELECT COUNT(*) FROM verification_tokens
-WHERE rsi_handle = ? AND pocket_id_user_id != ?`
+	// First check the permanent verified_handles table.
+	const q1 = `SELECT COUNT(*) FROM verified_handles WHERE rsi_handle = ? AND pocket_id_user_id != ?`
 	var count int
-	if err := s.db.QueryRowContext(ctx, q, handle, excludeUserID).Scan(&count); err != nil {
+	if err := s.db.QueryRowContext(ctx, q1, handle, excludeUserID).Scan(&count); err != nil {
+		return false, fmt.Errorf("check verified handle: %w", err)
+	}
+	if count > 0 {
+		return true, nil
+	}
+	// Also check pending verification_tokens.
+	const q2 = `SELECT COUNT(*) FROM verification_tokens WHERE rsi_handle = ? AND pocket_id_user_id != ?`
+	if err := s.db.QueryRowContext(ctx, q2, handle, excludeUserID).Scan(&count); err != nil {
 		return false, fmt.Errorf("check handle uniqueness: %w", err)
 	}
 	return count > 0, nil
+}
+
+// UpsertVerifiedHandle records that the given RSI handle was verified by userID.
+// If the handle already belongs to this user, the row is updated in place.
+func (s *Store) UpsertVerifiedHandle(ctx context.Context, handle, userID string) error {
+	const q = `
+INSERT INTO verified_handles (rsi_handle, pocket_id_user_id, verified_at)
+VALUES (?, ?, ?)
+ON CONFLICT(rsi_handle) DO UPDATE SET
+    pocket_id_user_id = excluded.pocket_id_user_id,
+    verified_at       = excluded.verified_at`
+	if _, err := s.db.ExecContext(ctx, q, handle, userID, time.Now().UTC().Format(time.RFC3339)); err != nil {
+		return fmt.Errorf("upsert verified handle: %w", err)
+	}
+	return nil
+}
+
+// DeleteVerifiedHandleByUserID removes the verified handle entry for a user.
+// Called when the user deletes their account.
+func (s *Store) DeleteVerifiedHandleByUserID(ctx context.Context, userID string) error {
+	const q = `DELETE FROM verified_handles WHERE pocket_id_user_id = ?`
+	if _, err := s.db.ExecContext(ctx, q, userID); err != nil {
+		return fmt.Errorf("delete verified handle: %w", err)
+	}
+	return nil
 }
 
 // DeleteTokenByUserID removes any pending verification token for the user.

@@ -221,6 +221,10 @@ func (s *Server) completeVerification(
 		return fmt.Errorf("set custom claims: %w", err)
 	}
 
+	if err := s.store.UpsertVerifiedHandle(ctx, vt.RSIHandle, userID); err != nil {
+		return fmt.Errorf("store verified handle: %w", err)
+	}
+
 	if profile.AvatarURL != "" {
 		if err := s.pid.SetProfilePicture(ctx, userID, profile.AvatarURL); err != nil {
 			// Non-fatal: log and continue without failing the whole verification.
@@ -466,6 +470,14 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 		slog.ErrorContext(r.Context(), "delete account: pocket id deletion failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
+	}
+
+	// Best-effort local cleanup — don't fail the deletion if these error.
+	if err := s.store.DeleteVerifiedHandleByUserID(r.Context(), user.ID); err != nil {
+		slog.WarnContext(r.Context(), "delete account: remove verified handle", "user_id", user.ID, "err", err)
+	}
+	if err := s.store.DeleteTokenByUserID(r.Context(), user.ID); err != nil {
+		slog.WarnContext(r.Context(), "delete account: remove pending token", "user_id", user.ID, "err", err)
 	}
 
 	slog.InfoContext(r.Context(), "account deleted", "user_id", user.ID)
