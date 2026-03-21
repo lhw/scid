@@ -18,6 +18,10 @@ type Config struct {
 
 	// PocketIDAdminAPIKey is the admin API key for Pocket ID.
 	PocketIDAdminAPIKey string
+
+	// RequireAppApproval controls whether newly registered OIDC clients require
+	// admin approval before they become active.  Defaults to true.
+	RequireAppApproval bool
 }
 
 // Load reads configuration from environment variables, applying defaults where
@@ -28,6 +32,7 @@ func Load() (*Config, error) {
 		DatabasePath:        getEnv("DATABASE_PATH", "/data/scid.db"),
 		PocketIDInternalURL: getEnv("POCKET_ID_INTERNAL_URL", "http://pocket-id:3000"),
 		PocketIDAdminAPIKey: os.Getenv("POCKET_ID_ADMIN_API_KEY"),
+		RequireAppApproval:  getEnv("APP_REQUIRE_APPROVAL", "true") != "false",
 	}
 
 	if cfg.PocketIDAdminAPIKey == "" {

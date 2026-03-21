@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -40,6 +41,7 @@ CREATE TABLE IF NOT EXISTS user_orgs (
 
 -- app_registrations links Pocket ID OIDC client IDs to SCID owner users.
 -- verified_only = 1 means only users in the "verified" group can use this app.
+-- status: 'pending' | 'approved' | 'rejected'
 CREATE TABLE IF NOT EXISTS app_registrations (
     id TEXT PRIMARY KEY,
     oidc_client_id TEXT NOT NULL UNIQUE,
@@ -47,6 +49,13 @@ CREATE TABLE IF NOT EXISTS app_registrations (
     verified_only INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
+`
+
+// migrations adds columns that were introduced after initial schema creation.
+// Each statement is expected to fail silently if the column already exists.
+const migrations = `
+ALTER TABLE app_registrations ADD COLUMN status TEXT NOT NULL DEFAULT 'approved';
+ALTER TABLE app_registrations ADD COLUMN rejection_reason TEXT NOT NULL DEFAULT '';
 `
 
 // VerificationToken represents a row in the verification_tokens table.
@@ -74,7 +83,23 @@ func New(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
+	// Run incremental migrations — ignore errors for already-applied statements
+	// (SQLite returns an error when trying to add a column that already exists).
+	for _, stmt := range splitMigrations(migrations) {
+		db.Exec(stmt) // nolint:errcheck — intentionally ignoring re-run errors
+	}
 	return &Store{db: db}, nil
+}
+
+// splitMigrations splits a multi-statement migration string on semicolons.
+func splitMigrations(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ";") {
+		if t := strings.TrimSpace(part); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // Close closes the underlying database connection.
@@ -173,24 +198,30 @@ var ErrNotFound = fmt.Errorf("not found")
 
 // AppRegistration tracks which Pocket ID OIDC client belongs to which SCID user.
 type AppRegistration struct {
-	ID           string
-	OIDCClientID string
-	OwnerUserID  string
-	VerifiedOnly bool
-	CreatedAt    time.Time
+	ID              string
+	OIDCClientID    string
+	OwnerUserID     string
+	VerifiedOnly    bool
+	Status          string // "pending" | "approved" | "rejected"
+	RejectionReason string
+	CreatedAt       time.Time
 }
 
 // CreateAppRegistration inserts a new app registration row.
 func (s *Store) CreateAppRegistration(ctx context.Context, reg *AppRegistration) error {
 	const q = `
-INSERT INTO app_registrations (id, oidc_client_id, owner_user_id, verified_only, created_at)
-VALUES (?, ?, ?, ?, ?)`
+INSERT INTO app_registrations (id, oidc_client_id, owner_user_id, verified_only, status, rejection_reason, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?)`
 	verifiedOnly := 0
 	if reg.VerifiedOnly {
 		verifiedOnly = 1
 	}
+	status := reg.Status
+	if status == "" {
+		status = "approved"
+	}
 	_, err := s.db.ExecContext(ctx, q,
-		reg.ID, reg.OIDCClientID, reg.OwnerUserID, verifiedOnly,
+		reg.ID, reg.OIDCClientID, reg.OwnerUserID, verifiedOnly, status, reg.RejectionReason,
 		reg.CreatedAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("insert app registration: %w", err)
@@ -202,7 +233,7 @@ VALUES (?, ?, ?, ?, ?)`
 // Returns ErrNotFound if no matching row exists.
 func (s *Store) GetAppRegistrationByClientID(ctx context.Context, oidcClientID string) (*AppRegistration, error) {
 	const q = `
-SELECT id, oidc_client_id, owner_user_id, verified_only, created_at
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(status,'approved'), COALESCE(rejection_reason,''), created_at
 FROM app_registrations
 WHERE oidc_client_id = ?`
 	return scanAppRegistration(s.db.QueryRowContext(ctx, q, oidcClientID))
@@ -211,25 +242,11 @@ WHERE oidc_client_id = ?`
 // ListAppRegistrationsByOwner returns all app registrations for a given user.
 func (s *Store) ListAppRegistrationsByOwner(ctx context.Context, ownerUserID string) ([]AppRegistration, error) {
 	const q = `
-SELECT id, oidc_client_id, owner_user_id, verified_only, created_at
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(status,'approved'), COALESCE(rejection_reason,''), created_at
 FROM app_registrations
 WHERE owner_user_id = ?
 ORDER BY created_at ASC`
-	rows, err := s.db.QueryContext(ctx, q, ownerUserID)
-	if err != nil {
-		return nil, fmt.Errorf("query app registrations: %w", err)
-	}
-	defer rows.Close()
-
-	var result []AppRegistration
-	for rows.Next() {
-		reg, err := scanAppRegistrationRow(rows)
-		if err != nil {
-			return nil, err
-		}
-		result = append(result, *reg)
-	}
-	return result, rows.Err()
+	return queryAppRegistrations(s.db, ctx, q, ownerUserID)
 }
 
 // DeleteAppRegistrationByClientID removes an app registration by OIDC client ID.
@@ -254,11 +271,57 @@ func (s *Store) UpdateAppRegistrationVerifiedOnly(ctx context.Context, oidcClien
 	return nil
 }
 
+// UpdateAppRegistrationStatus updates the status (and optional rejection reason) for an app.
+func (s *Store) UpdateAppRegistrationStatus(ctx context.Context, oidcClientID, status, rejectionReason string) error {
+	const q = `UPDATE app_registrations SET status = ?, rejection_reason = ? WHERE oidc_client_id = ?`
+	if _, err := s.db.ExecContext(ctx, q, status, rejectionReason, oidcClientID); err != nil {
+		return fmt.Errorf("update app registration status: %w", err)
+	}
+	return nil
+}
+
+// ListPendingAppRegistrations returns all app registrations with status='pending'.
+func (s *Store) ListPendingAppRegistrations(ctx context.Context) ([]AppRegistration, error) {
+	const q = `
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(status,'approved'), COALESCE(rejection_reason,''), created_at
+FROM app_registrations
+WHERE COALESCE(status,'approved') = 'pending'
+ORDER BY created_at ASC`
+	return queryAppRegistrations(s.db, ctx, q)
+}
+
+// ListAllAppRegistrations returns all app registrations ordered by creation date.
+func (s *Store) ListAllAppRegistrations(ctx context.Context) ([]AppRegistration, error) {
+	const q = `
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(status,'approved'), COALESCE(rejection_reason,''), created_at
+FROM app_registrations
+ORDER BY created_at DESC`
+	return queryAppRegistrations(s.db, ctx, q)
+}
+
+func queryAppRegistrations(db *sql.DB, ctx context.Context, query string, args ...any) ([]AppRegistration, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query app registrations: %w", err)
+	}
+	defer rows.Close()
+
+	var result []AppRegistration
+	for rows.Next() {
+		reg, err := scanAppRegistrationRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *reg)
+	}
+	return result, rows.Err()
+}
+
 func scanAppRegistration(row *sql.Row) (*AppRegistration, error) {
 	var reg AppRegistration
 	var verifiedOnly int
 	var createdAt string
-	err := row.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &createdAt)
+	err := row.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &reg.Status, &reg.RejectionReason, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -274,7 +337,7 @@ func scanAppRegistrationRow(rows *sql.Rows) (*AppRegistration, error) {
 	var reg AppRegistration
 	var verifiedOnly int
 	var createdAt string
-	err := rows.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &createdAt)
+	err := rows.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &reg.Status, &reg.RejectionReason, &createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("scan app registration: %w", err)
 	}

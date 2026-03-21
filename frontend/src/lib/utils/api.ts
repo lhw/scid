@@ -9,6 +9,7 @@ export interface OrgEntry {
 export interface VerifyStatus {
   authenticated: boolean;
   verified: boolean;
+  admin?: boolean;
   user_id?: string;
   username?: string;
   handle?: string;
@@ -118,6 +119,7 @@ export interface AppRegistration {
   id: string;
   client_secret?: string; // only present on create or rotate
   name: string;
+  owner_username?: string; // only present in admin context
   launch_url?: string;
   redirect_uris: string[];
   logout_uris: string[];
@@ -125,6 +127,8 @@ export interface AppRegistration {
   pkce_required: boolean;
   verified_only: boolean;
   has_logo: boolean;
+  status: string; // "pending" | "approved" | "rejected"
+  rejection_reason?: string;
   created_at: string;
 }
 
@@ -217,5 +221,42 @@ export async function uploadAppLogo(id: string, file: File): Promise<void> {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
     throw new Error(err.error ?? `Status ${res.status}`);
   }
+}
+
+// ---- Admin API ----
+
+export async function adminListApps(status?: string): Promise<AppRegistration[]> {
+  const url = status ? `/api/admin/apps?status=${encodeURIComponent(status)}` : "/api/admin/apps";
+  const res = await fetch(url, { headers: authHeader() });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function adminApproveApp(id: string): Promise<AppRegistration> {
+  const res = await fetch(`/api/admin/apps/${encodeURIComponent(id)}/approve`, {
+    method: "POST",
+    headers: authHeader(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function adminRejectApp(id: string, reason?: string): Promise<AppRegistration> {
+  const res = await fetch(`/api/admin/apps/${encodeURIComponent(id)}/reject`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ reason: reason ?? "" }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+  return res.json();
 }
 

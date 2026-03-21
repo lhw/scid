@@ -4,13 +4,23 @@
   import { Toaster } from 'svelte-sonner';
   import { onMount } from 'svelte';
   import { getAccessToken } from '$lib/utils/auth';
+  import { getVerifyStatus } from '$lib/utils/api';
   import { PUBLIC_POCKET_ID_URL } from '$env/static/public';
 
   let { children } = $props();
   let isAuthenticated = $state(false);
+  let isAdmin = $state(false);
 
-  onMount(() => {
+  onMount(async () => {
     isAuthenticated = getAccessToken() !== null;
+    if (isAuthenticated) {
+      try {
+        const status = await getVerifyStatus(fetch);
+        isAdmin = status.admin === true;
+      } catch {
+        // Non-fatal; admin link will simply not appear.
+      }
+    }
   });
 </script>
 
@@ -42,6 +52,14 @@
           >
             My Apps
           </a>
+          {#if isAdmin}
+            <a
+              href="/admin/apps"
+              class="text-sm text-[#e2e8f0]/60 transition-colors hover:text-[#ffd700]"
+            >
+              Admin
+            </a>
+          {/if}
           <a
             href="{PUBLIC_POCKET_ID_URL}"
             target="_blank"

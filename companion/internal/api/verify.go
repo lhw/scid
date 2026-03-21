@@ -252,6 +252,7 @@ type statusResponse struct {
 	UserID           string     `json:"user_id,omitempty"`
 	Username         string     `json:"username,omitempty"`
 	Verified         bool       `json:"verified"`
+	Admin            bool       `json:"admin,omitempty"`
 	Handle           string     `json:"handle,omitempty"`
 	VerifiedAt       string     `json:"verified_at,omitempty"`
 	Enlisted         string     `json:"enlisted,omitempty"`
@@ -303,7 +304,9 @@ func (s *Server) handleVerifyStatus(w http.ResponseWriter, r *http.Request) {
 	for _, g := range groups {
 		if g.Name == "verified" {
 			resp.Verified = true
-			break
+		}
+		if g.Name == "admin" {
+			resp.Admin = true
 		}
 	}
 

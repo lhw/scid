@@ -321,20 +321,24 @@ The home page (`/`) is the profile hub for logged-in users. Implemented.
 **Unauthenticated users see:**
 - Same hero + feature cards (no user data shown)
 
-**Still to add:**
-- Delete account option (for users who want to permanently delete their account)
-  - `POST /api/account/delete` — permanently deletes user from Pocket ID and logs them out
-
 ### Phase 2: Client App Registration
-- [ ] `POST /api/apps` — create OIDC client via Pocket ID admin API (name, redirect URIs, homepage)
-- [ ] `GET /api/apps` — list requester's registered apps (filter by `owner_id` claim)
-- [ ] `GET /api/apps/{id}` — get single app + secret
-- [ ] `DELETE /api/apps/{id}` — delete app
-- [ ] `POST /api/apps/{id}/secret` — rotate client secret
-- [ ] Store owner metadata in companion DB (pocket_id client ID → SCID user ID)
-- [ ] `/apps` SvelteKit page — registration form + list of user's apps
-- [ ] `/apps/{id}` SvelteKit page — app detail, secret display (once), rotate, delete
-- [ ] (Optional) Admin approval workflow — create app in `pending` state, require admin confirm
+- [x] `POST /api/apps` — create OIDC client via Pocket ID admin API (name, redirect URIs, homepage)
+- [x] `GET /api/apps` — list requester's registered apps (filter by `owner_id` claim)
+- [x] `GET /api/apps/{id}` — get single app + secret
+- [x] `DELETE /api/apps/{id}` — delete app
+- [x] `POST /api/apps/{id}/secret` — rotate client secret
+- [x] Store owner metadata in companion DB (pocket_id client ID → SCID user ID)
+- [x] `/apps` SvelteKit page — registration form (with logo upload) + list of user's apps
+- [x] `/apps/{id}` SvelteKit page — app detail, secret display (once), rotate, delete, logo upload, edit redirect URIs
+- [x] Only verified users can register OIDC client applications
+- [x] Admin approval workflow — `APP_REQUIRE_APPROVAL` env var (default `true`); new apps are set to `pending` and restricted to `scid:pending` sentinel group (no real members → no logins until approved); admins approve / reject via `/admin/apps`
+- [x] `GET /api/admin/apps` — list all apps (filterable by status); admin only
+- [x] `POST /api/admin/apps/{id}/approve` — approve app (removes pending restriction, applies verified/unrestricted groups)
+- [x] `POST /api/admin/apps/{id}/reject` — reject app with reason (re-applies pending restriction)
+- [x] `GET /api/verify/status` includes `admin: true` for users in the Pocket ID `admin` group
+- [x] `/admin/apps` SvelteKit page — filter tabs (pending / approved / rejected / all), approve/reject buttons, reject with reason modal
+- [x] RSI org membership scraping (`/citizens/<handle>/organizations`) + caching in SQLite
+- [x] `rsi:<SID>`-prefixed Pocket ID groups synced from org SIDs on verification and refresh
 
 ### Phase 3: Polish & Hardening
 - [ ] Rate limiting on verification and API endpoints
@@ -342,13 +346,11 @@ The home page (`/`) is the profile hub for logged-in users. Implemented.
 - [ ] Audit logging
 - [ ] Monitoring & health checks
 - [ ] User documentation / onboarding guide
+- [ ] `POST /api/account/delete` — permanently delete account from Pocket ID and log out
 
 ### Phase 4: Future Enhancements
-- [ ] RSI org membership scraping (SID extraction from `/citizens/<handle>/organizations`)
-- [ ] Create `rsi:`-prefixed Pocket ID groups from org SIDs, sync on verification and re-verification
-- [ ] Multiple RSI handle linking (alts)
 - [ ] Community portal / directory of fan sites using SCID
-- [ ] Consider migration to Keycloak if complexity warrants it
+- [ ] Re-verification: detect RSI handle reassignment or account deletion
 
 ---
 

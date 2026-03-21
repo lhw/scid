@@ -221,6 +221,15 @@
         <div class="min-w-0 flex-1">
           <div class="flex flex-wrap items-center gap-2">
             <h1 class="text-xl font-bold text-[#e2e8f0]">{app.name}</h1>
+            {#if app.status === 'pending'}
+              <span class="rounded-full border border-yellow-500/30 bg-yellow-500/10 px-2 py-0.5 text-xs text-yellow-400">
+                Pending Approval
+              </span>
+            {:else if app.status === 'rejected'}
+              <span class="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs text-red-400">
+                Rejected
+              </span>
+            {/if}
             {#if app.verified_only}
               <span class="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400">
                 Verified Only
@@ -233,6 +242,11 @@
             {/if}
           </div>
           <p class="mt-1 text-xs text-[#e2e8f0]/30">Created {app.created_at.slice(0, 10)}</p>
+          {#if app.status === 'pending'}
+            <p class="mt-1 text-xs text-yellow-400/70">Your application is awaiting admin review. It will not be usable until approved.</p>
+          {:else if app.status === 'rejected' && app.rejection_reason}
+            <p class="mt-1 text-xs text-red-400/70">Reason: {app.rejection_reason}</p>
+          {/if}
         </div>
 
         {#if !editing}

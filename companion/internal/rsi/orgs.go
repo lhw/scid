@@ -64,24 +64,42 @@ func (s *Scraper) FetchOrgs(ctx context.Context, handle string) ([]OrgInfo, erro
 
 // parseOrgs extracts org info from the parsed HTML tree.
 //
-// RSI's org page structure (as of 2025):
+// RSI's org page structure (as of 2026):
 //
-//	<div class="org-row main-org"> or <div class="org-row affiliation">
-//	  <div class="logo"> <img src="..."> </div>
-//	  <div class="name"> <a href="/orgs/SPAWO">Star Pilgrim Alliance</a> </div>
-//	  <div class="rank"> <span class="value">…</span> </div>
+//	<div class="box-content org main visibility-V">   <!-- or "affiliation" -->
+//	  <div class="inner-bg clearfix">
+//	    <div class="left-col">
+//	      <div class="inner clearfix">
+//	        <div class="thumb">
+//	          <a href="/orgs/AEON"><img src="...logo..."/></a>
+//	        </div>
+//	        <div class="info">
+//	          <p class="entry"><a href="/orgs/AEON" class="value">Æon</a></p>
+//	          <p class="entry">
+//	            <span class="label">Spectrum Identification (SID)</span>
+//	            <strong class="value">AEON</strong>
+//	          </p>
+//	          <p class="entry">
+//	            <span class="label">Organization rank</span>
+//	            <strong class="value">Vice President</strong>
+//	          </p>
+//	        </div>
+//	      </div>
+//	    </div>
+//	  </div>
 //	</div>
 //
-// The SID comes from the href: /orgs/<SID>.
+// The outer div has class "org" along with "main" or "affiliation".
 func parseOrgs(doc *html.Node) []OrgInfo {
 	var orgs []OrgInfo
 
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode && hasCSSClass(n, "org-row") {
-			if org, ok := parseOrgRow(n); ok {
+		if n.Type == html.ElementNode && hasCSSClass(n, "org") &&
+			(hasCSSClass(n, "main") || hasCSSClass(n, "affiliation")) {
+			if org, ok := parseOrgBox(n); ok {
 				orgs = append(orgs, org)
-				return // don't descend into children of this row
+				return // don't descend into children of this box
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -93,34 +111,34 @@ func parseOrgs(doc *html.Node) []OrgInfo {
 	return orgs
 }
 
-func parseOrgRow(n *html.Node) (OrgInfo, bool) {
+// parseOrgBox extracts org info from a <div class="box-content org main/affiliation"> node.
+func parseOrgBox(n *html.Node) (OrgInfo, bool) {
 	org := OrgInfo{
-		IsMain: hasCSSClass(n, "main-org") || hasCSSClass(n, "main"),
+		IsMain: hasCSSClass(n, "main"),
 	}
 
 	var walk func(*html.Node)
 	walk = func(node *html.Node) {
 		if node.Type == html.ElementNode {
 			switch {
-			case hasCSSClass(node, "logo") || hasCSSClass(node, "thumb"):
-				if src := findFirstImgSrc(node); src != "" {
-					org.LogoURL = absoluteURL(src)
-				}
-
-			case hasCSSClass(node, "name") || hasCSSClass(node, "org-name"):
-				// The name element typically contains an <a href="/orgs/SID">Name</a>.
+			case hasCSSClass(node, "thumb"):
+				// Logo and SID from the <a href="/orgs/SID"><img src="..."/></a> inside thumb.
 				if a := findFirst(node, "a"); a != nil {
-					org.Name = strings.TrimSpace(extractText(a))
-					href := getAttr(a, "href")
-					if sid := sidFromHref(href); sid != "" {
-						org.SID = sid
+					if org.SID == "" {
+						org.SID = sidFromHref(getAttr(a, "href"))
 					}
-				} else {
-					org.Name = strings.TrimSpace(extractText(node))
+					if org.LogoURL == "" {
+						if src := findFirstImgSrc(node); src != "" {
+							org.LogoURL = absoluteURL(src)
+						}
+					}
 				}
+				return // don't descend further into thumb
 
-			case hasCSSClass(node, "rank") || hasCSSClass(node, "member-rank"):
-				org.RankName = strings.TrimSpace(extractValueText(node))
+			case hasCSSClass(node, "info"):
+				// Iterate <p class="entry"> children.
+				parseInfoEntries(node, &org)
+				return // don't descend further into info
 			}
 		}
 		for c := node.FirstChild; c != nil; c = c.NextSibling {
@@ -129,21 +147,63 @@ func parseOrgRow(n *html.Node) (OrgInfo, bool) {
 	}
 	walk(n)
 
-	// An org row is only valid if we got at least a SID or a name.
-	if org.SID == "" && org.Name == "" {
-		return OrgInfo{}, false
-	}
-	// If we have a name but no SID, try extracting SID from any /orgs/ link inside.
+	// Fallback: check any /orgs/ link in the whole box if we still have no SID.
 	if org.SID == "" {
-		if sid := findOrgSIDAnywhere(n); sid != "" {
-			org.SID = sid
-		}
+		org.SID = findOrgSIDAnywhere(n)
 	}
-	// If we still have no SID, skip this row — the union of name+SID is required.
 	if org.SID == "" {
 		return OrgInfo{}, false
 	}
 	return org, true
+}
+
+// parseInfoEntries processes the <p class="entry"> elements inside a <div class="info">.
+func parseInfoEntries(infoNode *html.Node, org *OrgInfo) {
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode && hasCSSClass(n, "entry") {
+			// Get the label text, if any.
+			labelText := ""
+			if label := findFirstWithClass(n, "span", "label"); label != nil {
+				labelText = strings.ToLower(extractText(label))
+			}
+
+			if a := findFirstWithClass(n, "a", "value"); a != nil {
+				// <a class="value" href="/orgs/SID">Org Name</a>
+				if org.Name == "" {
+					org.Name = strings.TrimSpace(extractText(a))
+				}
+				if org.SID == "" {
+					org.SID = sidFromHref(getAttr(a, "href"))
+				}
+			} else if strong := findFirstWithClass(n, "strong", "value"); strong != nil {
+				val := strings.TrimSpace(extractText(strong))
+				switch {
+				case strings.Contains(labelText, "sid") || strings.Contains(labelText, "spectrum"):
+					org.SID = val
+				case strings.Contains(labelText, "rank"):
+					org.RankName = val
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(infoNode)
+}
+
+// findFirstWithClass returns the first descendant element matching tag and CSS class.
+func findFirstWithClass(n *html.Node, tag, class string) *html.Node {
+	if n.Type == html.ElementNode && n.Data == tag && hasCSSClass(n, class) {
+		return n
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if found := findFirstWithClass(c, tag, class); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 // sidFromHref extracts the org SID from hrefs like "/orgs/SPAWO" or "/en/orgs/SPAWO".

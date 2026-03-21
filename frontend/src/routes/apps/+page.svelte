@@ -5,7 +5,7 @@
   import { goto } from '$app/navigation';
   import type { PageData } from './$types';
   import type { AppRegistration, CreateAppRequest } from '$lib/utils/api';
-  import { listApps, createApp } from '$lib/utils/api';
+  import { listApps, createApp, uploadAppLogo } from '$lib/utils/api';
 
   let { data }: { data: PageData } = $props();
 
@@ -22,6 +22,7 @@
   let formIsPublic = $state(false);
   let formPkceRequired = $state(false);
   let formVerifiedOnly = $state(false);
+  let formLogoFile = $state<File | null>(null);
   let formErrors = $state<Record<string, string>>({});
 
   onMount(async () => {
@@ -87,6 +88,14 @@
         verified_only: formVerifiedOnly,
       };
       const created = await createApp(req);
+      // Upload logo if one was selected (non-fatal if it fails).
+      if (formLogoFile) {
+        try {
+          await uploadAppLogo(created.id, formLogoFile);
+        } catch (logoErr) {
+          toast.error('App created, but logo upload failed — you can upload it from the app settings.');
+        }
+      }
       apps = [...apps, created];
       toast.success('Application registered!');
       if (created.client_secret) {
@@ -111,6 +120,7 @@
     formIsPublic = false;
     formPkceRequired = false;
     formVerifiedOnly = false;
+    formLogoFile = null;
     formErrors = {};
   }
 </script>
@@ -275,6 +285,22 @@
               </div>
             </label>
           </div>
+        </div>
+
+        <!-- Logo -->
+        <div class="mt-4">
+          <p class="mb-1 text-sm font-medium text-[#e2e8f0]/70">Logo (optional)</p>
+          <label class="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-[#1e3a5f] bg-[#0a0e1a] p-3 hover:border-[#00d4ff]/50">
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/svg+xml"
+              onchange={(e) => { formLogoFile = (e.target as HTMLInputElement).files?.[0] ?? null; }}
+              class="sr-only"
+            />
+            <span class="text-sm text-[#e2e8f0]/50">
+              {formLogoFile ? formLogoFile.name : 'Click to choose an image…'}
+            </span>
+          </label>
         </div>
 
         <div class="mt-6 flex items-center gap-3">

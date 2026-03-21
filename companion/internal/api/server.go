@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -15,13 +17,20 @@ import (
 	"github.com/lhw/scid/companion/internal/store"
 )
 
+// tokenCacheEntry holds a cached userinfo result.
+type tokenCacheEntry struct {
+	user      *pocketid.User
+	expiresAt time.Time
+}
+
 // Server wires together dependencies and the HTTP router.
 type Server struct {
-	cfg     *config.Config
-	store   *store.Store
-	pid     *pocketid.Client
-	scraper *rsi.Scraper
-	router  *chi.Mux
+	cfg        *config.Config
+	store      *store.Store
+	pid        *pocketid.Client
+	scraper    *rsi.Scraper
+	router     *chi.Mux
+	tokenCache sync.Map // token → *tokenCacheEntry
 }
 
 // New creates a configured Server ready to serve HTTP.
@@ -83,6 +92,10 @@ func (s *Server) buildRouter() *chi.Mux {
 		r.Delete("/api/apps/{id}", s.handleDeleteApp)
 		r.Post("/api/apps/{id}/secret", s.handleRotateSecret)
 		r.Put("/api/apps/{id}/logo", s.handleUploadLogo)
+		// Admin endpoints — require "admin" Pocket ID group (enforced in handler).
+		r.Get("/api/admin/apps", s.handleListAdminApps)
+		r.Post("/api/admin/apps/{id}/approve", s.handleApproveApp)
+		r.Post("/api/admin/apps/{id}/reject", s.handleRejectApp)
 	})
 
 	return r
@@ -93,8 +106,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
+const tokenCacheTTL = 30 * time.Second
+
 // bearerAuthMiddleware validates the Authorization: Bearer token with Pocket ID
 // and stores the resolved *pocketid.User in the request context.
+// Results are cached for tokenCacheTTL to avoid hammering Pocket ID's rate limit.
 func (s *Server) bearerAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := extractBearerToken(r)
@@ -103,12 +119,27 @@ func (s *Server) bearerAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Serve from cache if the entry is still fresh.
+		if v, ok := s.tokenCache.Load(token); ok {
+			e := v.(*tokenCacheEntry)
+			if time.Now().Before(e.expiresAt) {
+				next.ServeHTTP(w, r.WithContext(withUser(r.Context(), e.user)))
+				return
+			}
+			s.tokenCache.Delete(token)
+		}
+
 		user, err := s.pid.GetCurrentUser(r.Context(), token)
 		if err != nil {
 			slog.WarnContext(r.Context(), "bearer auth failed", "err", err)
 			writeError(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}
+
+		s.tokenCache.Store(token, &tokenCacheEntry{
+			user:      user,
+			expiresAt: time.Now().Add(tokenCacheTTL),
+		})
 
 		next.ServeHTTP(w, r.WithContext(withUser(r.Context(), user)))
 	})

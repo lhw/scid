@@ -33,17 +33,20 @@ type createAppRequest struct {
 }
 
 type appResponse struct {
-	ID           string   `json:"id"`
-	ClientSecret string   `json:"client_secret,omitempty"`
-	Name         string   `json:"name"`
-	LaunchURL    string   `json:"launch_url,omitempty"`
-	RedirectURIs []string `json:"redirect_uris"`
-	LogoutURIs   []string `json:"logout_uris"`
-	IsPublic     bool     `json:"is_public"`
-	PkceRequired bool     `json:"pkce_required"`
-	VerifiedOnly bool     `json:"verified_only"`
-	HasLogo      bool     `json:"has_logo"`
-	CreatedAt    string   `json:"created_at"`
+	ID              string   `json:"id"`
+	ClientSecret    string   `json:"client_secret,omitempty"`
+	Name            string   `json:"name"`
+	OwnerUsername   string   `json:"owner_username,omitempty"`
+	LaunchURL       string   `json:"launch_url,omitempty"`
+	RedirectURIs    []string `json:"redirect_uris"`
+	LogoutURIs      []string `json:"logout_uris"`
+	IsPublic        bool     `json:"is_public"`
+	PkceRequired    bool     `json:"pkce_required"`
+	VerifiedOnly    bool     `json:"verified_only"`
+	HasLogo         bool     `json:"has_logo"`
+	Status          string   `json:"status"`
+	RejectionReason string   `json:"rejection_reason,omitempty"`
+	CreatedAt       string   `json:"created_at"`
 }
 
 // buildAppResponse merges an OIDCClient from Pocket ID with a store.AppRegistration.
@@ -60,18 +63,24 @@ func buildAppResponse(client *pocketid.OIDCClient, reg *store.AppRegistration, s
 	if logoutURIs == nil {
 		logoutURIs = []string{}
 	}
+	status := reg.Status
+	if status == "" {
+		status = "approved"
+	}
 	return appResponse{
-		ID:           client.ID,
-		ClientSecret: secret,
-		Name:         client.Name,
-		LaunchURL:    launchURL,
-		RedirectURIs: redirectURIs,
-		LogoutURIs:   logoutURIs,
-		IsPublic:     client.IsPublic,
-		PkceRequired: client.PkceEnabled,
-		VerifiedOnly: reg.VerifiedOnly,
-		HasLogo:      client.HasLogo,
-		CreatedAt:    reg.CreatedAt.UTC().Format(time.RFC3339),
+		ID:              client.ID,
+		ClientSecret:    secret,
+		Name:            client.Name,
+		LaunchURL:       launchURL,
+		RedirectURIs:    redirectURIs,
+		LogoutURIs:      logoutURIs,
+		IsPublic:        client.IsPublic,
+		PkceRequired:    client.PkceEnabled,
+		VerifiedOnly:    reg.VerifiedOnly,
+		HasLogo:         client.HasLogo,
+		Status:          status,
+		RejectionReason: reg.RejectionReason,
+		CreatedAt:       reg.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -179,6 +188,31 @@ func (s *Server) ownerRegOrNil(r *http.Request, clientID, userID string) (*store
 	return reg, nil
 }
 
+// isUserAdmin checks whether the user is in the "admin" Pocket ID group.
+func (s *Server) isUserAdmin(r *http.Request, userID string) (bool, error) {
+	groups, err := s.pid.GetUserGroups(r.Context(), userID)
+	if err != nil {
+		return false, err
+	}
+	for _, g := range groups {
+		if g.Name == "admin" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// setPendingGroups restricts a new OIDC client to the scid:pending sentinel group
+// so that no real user can log in until an admin approves it.
+func (s *Server) setPendingGroups(r *http.Request, clientID string) error {
+	g, err := s.pid.EnsureGroupExists(r.Context(), "scid:pending", "Pending Admin Approval")
+	if err != nil {
+		return err
+	}
+	_, err = s.pid.SetOIDCClientAllowedGroups(r.Context(), clientID, []string{g.ID})
+	return err
+}
+
 // setVerifiedOnlyGroups configures Pocket ID group restriction for verified_only.
 // verifiedOnly=true → allows only the "verified" group; false → removes restriction.
 func (s *Server) setVerifiedOnlyGroups(r *http.Request, clientID string, verifiedOnly bool) error {
@@ -252,7 +286,19 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if req.VerifiedOnly {
+	// Determine initial status and apply group restrictions accordingly.
+	status := "approved"
+	if s.cfg.RequireAppApproval {
+		status = "pending"
+		// Restrict the client to a sentinel group so no real user can log in until approved.
+		if err := s.setPendingGroups(r, client.ID); err != nil {
+			slog.ErrorContext(r.Context(), "set pending groups failed", "client_id", client.ID, "err", err)
+			_ = s.pid.DeleteOIDCClient(r.Context(), client.ID)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+	} else if req.VerifiedOnly {
+		// Auto-approved path: apply verified_only restriction immediately.
 		if err := s.setVerifiedOnlyGroups(r, client.ID, true); err != nil {
 			slog.ErrorContext(r.Context(), "set verified-only groups failed", "client_id", client.ID, "err", err)
 			_ = s.pid.DeleteOIDCClient(r.Context(), client.ID)
@@ -266,6 +312,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		OIDCClientID: client.ID,
 		OwnerUserID:  user.ID,
 		VerifiedOnly: req.VerifiedOnly,
+		Status:       status,
 		CreatedAt:    time.Now().UTC(),
 	}
 	if err := s.store.CreateAppRegistration(r.Context(), reg); err != nil {
@@ -498,4 +545,177 @@ func (s *Server) handleUploadLogo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- GET /api/admin/apps ---
+
+func (s *Server) handleListAdminApps(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+
+	ok, err := s.isUserAdmin(r, user.ID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "admin check failed", "user_id", user.ID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusForbidden, "admin access required")
+		return
+	}
+
+	statusFilter := r.URL.Query().Get("status") // "", "pending", "approved", "rejected"
+
+	var regs []store.AppRegistration
+	if statusFilter == "pending" {
+		regs, err = s.store.ListPendingAppRegistrations(r.Context())
+	} else {
+		regs, err = s.store.ListAllAppRegistrations(r.Context())
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "list admin apps failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	apps := make([]appResponse, 0, len(regs))
+	for _, reg := range regs {
+		reg := reg
+		client, err := s.pid.GetOIDCClient(r.Context(), reg.OIDCClientID)
+		if err != nil {
+			slog.WarnContext(r.Context(), "admin list: get oidc client failed", "client_id", reg.OIDCClientID, "err", err)
+			continue
+		}
+		resp := buildAppResponse(client, &reg, "")
+		// Populate owner username for admin context.
+		if owner, err := s.pid.GetUser(r.Context(), reg.OwnerUserID); err == nil {
+			resp.OwnerUsername = owner.Username
+		}
+		apps = append(apps, resp)
+	}
+
+	writeJSON(w, http.StatusOK, apps)
+}
+
+// --- POST /api/admin/apps/{id}/approve ---
+
+func (s *Server) handleApproveApp(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+	clientID := chi.URLParam(r, "id")
+
+	ok, err := s.isUserAdmin(r, user.ID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "admin check failed", "user_id", user.ID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusForbidden, "admin access required")
+		return
+	}
+
+	reg, err := s.store.GetAppRegistrationByClientID(r.Context(), clientID)
+	if err == store.ErrNotFound {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "get app registration failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	if reg.Status == "approved" {
+		writeError(w, http.StatusConflict, "application is already approved")
+		return
+	}
+
+	// Apply correct group restriction now that the app is approved.
+	if reg.VerifiedOnly {
+		if err := s.setVerifiedOnlyGroups(r, clientID, true); err != nil {
+			slog.ErrorContext(r.Context(), "approve: set verified-only groups failed", "client_id", clientID, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+	} else {
+		// Remove all group restrictions — any user can log in.
+		if _, err := s.pid.SetOIDCClientAllowedGroups(r.Context(), clientID, []string{}); err != nil {
+			slog.ErrorContext(r.Context(), "approve: remove group restrictions failed", "client_id", clientID, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+	}
+
+	if err := s.store.UpdateAppRegistrationStatus(r.Context(), clientID, "approved", ""); err != nil {
+		slog.ErrorContext(r.Context(), "approve: update status failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	client, err := s.pid.GetOIDCClient(r.Context(), clientID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "approve: get oidc client failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	reg.Status = "approved"
+	reg.RejectionReason = ""
+	writeJSON(w, http.StatusOK, buildAppResponse(client, reg, ""))
+}
+
+// --- POST /api/admin/apps/{id}/reject ---
+
+type rejectRequest struct {
+	Reason string `json:"reason"`
+}
+
+func (s *Server) handleRejectApp(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+	clientID := chi.URLParam(r, "id")
+
+	ok, err := s.isUserAdmin(r, user.ID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "admin check failed", "user_id", user.ID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusForbidden, "admin access required")
+		return
+	}
+
+	reg, err := s.store.GetAppRegistrationByClientID(r.Context(), clientID)
+	if err == store.ErrNotFound {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "get app registration failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	var req rejectRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // reason is optional
+
+	// Ensure the client remains restricted (apply pending sentinel group).
+	if err := s.setPendingGroups(r, clientID); err != nil {
+		slog.WarnContext(r.Context(), "reject: re-apply pending groups failed", "client_id", clientID, "err", err)
+		// Non-fatal: continue with rejection.
+	}
+
+	if err := s.store.UpdateAppRegistrationStatus(r.Context(), clientID, "rejected", strings.TrimSpace(req.Reason)); err != nil {
+		slog.ErrorContext(r.Context(), "reject: update status failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	client, err := s.pid.GetOIDCClient(r.Context(), clientID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "reject: get oidc client failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	reg.Status = "rejected"
+	reg.RejectionReason = strings.TrimSpace(req.Reason)
+	writeJSON(w, http.StatusOK, buildAppResponse(client, reg, ""))
 }
