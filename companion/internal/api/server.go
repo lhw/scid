@@ -75,6 +75,8 @@ func (s *Server) buildRouter() *chi.Mux {
 	r.Post("/api/auth/signup-token", s.handleSignupToken)
 	// Org logo — serves cached org logos by SID (public, browser-cached).
 	r.Get("/api/orgs/{sid}/logo", s.handleOrgLogo)
+	// Public app directory — lists approved apps that have opted into the directory.
+	r.Get("/api/apps/directory", s.handleListDirectoryApps)
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.bearerAuthMiddleware)

@@ -3,7 +3,7 @@
   import { ModeWatcher } from 'mode-watcher';
   import { Toaster } from 'svelte-sonner';
   import { onMount } from 'svelte';
-  import { getAccessToken } from '$lib/utils/auth';
+  import { getAccessToken, clearAccessToken } from '$lib/utils/auth';
   import { getVerifyStatus } from '$lib/utils/api';
   import { PUBLIC_POCKET_ID_URL } from '$env/static/public';
 
@@ -76,7 +76,7 @@
   </main>
 
   <footer class="border-t border-[#1e3a5f] py-6 text-center text-xs text-[#e2e8f0]/40">
-    This is an unofficial fansite — not affiliated with Cloud Imperium Games.
+    This is an unofficial fansite — The site is not affiliated with Cloud Imperium Games.
     <span class="mx-2 opacity-40">·</span>
     <a href="/impressum" class="hover:text-[#e2e8f0]/70 transition-colors">Impressum</a>
   </footer>

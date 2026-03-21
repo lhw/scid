@@ -63,10 +63,10 @@ if 'verified' not in user_info.get('groups', []):
 ```json
 {
   "sub": "2fad53a2-de28-42c4-8ef1-efc4fbf899d8",
-  "preferred_username": "cyfreeze",
+  "preferred_username": "example",
   "email": "user@example.com",
   "email_verified": false,
-  "rsi_handle": "CyFreeze",
+  "rsi_handle": "Example",
   "rsi_verified_at": "2025-11-03T14:22:00Z",
   "rsi_enlisted": "2012-10-18",
   "rsi_citizen_record": "40746",

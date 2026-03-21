@@ -21,6 +21,9 @@
 
   type Step = 'handle' | 'token' | 'confirming' | 'success' | 'failed';
 
+  // Allow re-verification even when already verified (e.g. handle change).
+  let allowReVerify = $state(false);
+
   // Snapshot page data once at init time (data prop may be a proxy — read eagerly)
   const initStatus = untrack(() => data.status);
   const pendingStatus = initStatus && !initStatus.verified && initStatus.pending_handle
@@ -188,7 +191,7 @@
         </button>
       </div>
     </div>
-  {:else if data.status?.verified}
+  {:else if data.status?.verified && !allowReVerify}
     <!-- Already-verified card -->
     <div
       class="w-full max-w-lg rounded-xl border border-emerald-500/30 bg-[#111827]/80 p-8 text-center backdrop-blur-sm"
@@ -229,12 +232,27 @@
           Go to Homepage →
         </a>
       </div>
+      <div class="mt-6 border-t border-[#1e3a5f] pt-6">
+        <p class="mb-3 text-xs text-[#e2e8f0]/40">Changed your RSI handle?</p>
+        <button
+          onclick={() => { allowReVerify = true; }}
+          class="text-sm text-[#e2e8f0]/50 underline underline-offset-2 transition-colors hover:text-[#00d4ff]"
+        >
+          Re-verify with a different RSI handle
+        </button>
+      </div>
     </div>
   {:else}
     <!-- Wizard card -->
     <div
       class="w-full max-w-lg rounded-xl border border-[#1e3a5f] bg-[#111827]/80 p-8 backdrop-blur-sm"
     >
+      {#if allowReVerify}
+        <div class="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">
+          <strong>Changing your RSI handle</strong> — completing this flow will replace your existing verification.
+          Your account stays; only the linked RSI handle changes.
+        </div>
+      {/if}
       <!-- Step indicator -->
       <div class="mb-8 flex items-center">
         {#each wizardSteps as { n, label } (n)}
@@ -291,7 +309,7 @@
               id="rsi-handle"
               type="text"
               bind:value={handle}
-              placeholder="CyFreeze"
+              placeholder="Example"
               autocomplete="off"
               spellcheck="false"
               oninput={() => {

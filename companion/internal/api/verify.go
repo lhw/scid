@@ -458,6 +458,8 @@ func (s *Server) handleVerifyRefresh(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
+	nextSync := time.Now().Add(orgReverifyAge)
+	resp.NextSyncAt = &nextSync
 	writeJSON(w, http.StatusOK, resp)
 }
 

@@ -30,6 +30,7 @@ type createAppRequest struct {
 	IsPublic     bool     `json:"is_public"`
 	PkceRequired bool     `json:"pkce_required"`
 	VerifiedOnly bool     `json:"verified_only"`
+	Listed       bool     `json:"listed"`
 }
 
 type appResponse struct {
@@ -43,6 +44,7 @@ type appResponse struct {
 	IsPublic        bool     `json:"is_public"`
 	PkceRequired    bool     `json:"pkce_required"`
 	VerifiedOnly    bool     `json:"verified_only"`
+	Listed          bool     `json:"listed"`
 	HasLogo         bool     `json:"has_logo"`
 	Status          string   `json:"status"`
 	RejectionReason string   `json:"rejection_reason,omitempty"`
@@ -77,6 +79,7 @@ func buildAppResponse(client *pocketid.OIDCClient, reg *store.AppRegistration, s
 		IsPublic:        client.IsPublic,
 		PkceRequired:    client.PkceEnabled,
 		VerifiedOnly:    reg.VerifiedOnly,
+		Listed:          reg.Listed,
 		HasLogo:         client.HasLogo,
 		Status:          status,
 		RejectionReason: reg.RejectionReason,
@@ -98,6 +101,9 @@ func validateCreateAppRequest(req createAppRequest) string {
 		if !strings.HasPrefix(req.LaunchURL, "https://") {
 			return "launch_url must be an https:// URL"
 		}
+	}
+	if req.Listed && strings.TrimSpace(req.LaunchURL) == "" {
+		return "a launch_url is required to list this app in the directory"
 	}
 	if len(req.RedirectURIs) == 0 {
 		return "at least one redirect_uri is required"
@@ -312,8 +318,11 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		OIDCClientID: client.ID,
 		OwnerUserID:  user.ID,
 		VerifiedOnly: req.VerifiedOnly,
-		Status:       status,
-		CreatedAt:    time.Now().UTC(),
+		// Only list if auto-approved (pending apps won't appear until approved anyway,
+		// but we store the intent so it activates on approval).
+		Listed:    req.Listed && status == "approved",
+		Status:    status,
+		CreatedAt: time.Now().UTC(),
 	}
 	if err := s.store.CreateAppRegistration(r.Context(), reg); err != nil {
 		slog.ErrorContext(r.Context(), "store app registration failed", "client_id", client.ID, "err", err)
@@ -426,6 +435,20 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		reg.VerifiedOnly = req.VerifiedOnly
+	}
+
+	// Update listed flag if it changed; require approved status and launch_url.
+	if req.Listed != reg.Listed {
+		if req.Listed && reg.Status != "approved" {
+			writeError(w, http.StatusUnprocessableEntity, "app must be approved before listing in the directory")
+			return
+		}
+		if err := s.store.UpdateAppRegistrationListed(r.Context(), clientID, req.Listed); err != nil {
+			slog.ErrorContext(r.Context(), "update app registration listed failed", "client_id", clientID, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		reg.Listed = req.Listed
 	}
 
 	writeJSON(w, http.StatusOK, buildAppResponse(client, reg, ""))
@@ -718,4 +741,50 @@ func (s *Server) handleRejectApp(w http.ResponseWriter, r *http.Request) {
 	reg.Status = "rejected"
 	reg.RejectionReason = strings.TrimSpace(req.Reason)
 	writeJSON(w, http.StatusOK, buildAppResponse(client, reg, ""))
+}
+
+// --- GET /api/apps/directory (public) ---
+
+// directoryAppResponse is the public view of an app in the SCID directory.
+type directoryAppResponse struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	LaunchURL    string `json:"launch_url"`
+	HasLogo      bool   `json:"has_logo"`
+	VerifiedOnly bool   `json:"verified_only"`
+}
+
+func (s *Server) handleListDirectoryApps(w http.ResponseWriter, r *http.Request) {
+	regs, err := s.store.ListListedApps(r.Context())
+	if err != nil {
+		slog.ErrorContext(r.Context(), "list directory apps failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	apps := make([]directoryAppResponse, 0, len(regs))
+	for _, reg := range regs {
+		reg := reg
+		client, err := s.pid.GetOIDCClient(r.Context(), reg.OIDCClientID)
+		if err != nil {
+			slog.WarnContext(r.Context(), "directory: get oidc client failed", "client_id", reg.OIDCClientID, "err", err)
+			continue
+		}
+		launchURL := ""
+		if client.LaunchURL != nil {
+			launchURL = *client.LaunchURL
+		}
+		if launchURL == "" {
+			continue // skip apps without a launch URL
+		}
+		apps = append(apps, directoryAppResponse{
+			ID:           client.ID,
+			Name:         client.Name,
+			LaunchURL:    launchURL,
+			HasLogo:      client.HasLogo,
+			VerifiedOnly: reg.VerifiedOnly,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, apps)
 }

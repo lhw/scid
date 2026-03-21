@@ -311,7 +311,10 @@ The home page (`/`) is the profile hub for logged-in users. Implemented.
 - Avatar (served from `{POCKET_ID_URL}/api/users/{id}/profile-picture.png` — RSI avatar uploaded on verification/refresh)
 - RSI handle + green "Verified" badge
 - Info grid: verified date, enlistment date, citizen record number
-- "Refresh RSI info" button — calls `POST /api/verify/refresh`, shows spinner + toast
+- Next org re-sync time bar (human relative, e.g. "in 3 days") — persists correctly after refresh
+- "Refresh RSI info" button — calls `POST /api/verify/refresh`, shows spinner + toast; response now always includes `next_sync_at`
+- "Change RSI handle" link — inline amber warning → navigates to `/verify` wizard with pre-warning banner; existing verification is replaced on success
+- "Delete account" link — inline red warning + confirm; same pattern as change-handle
 
 **Logged-in but unverified users see:**
 - Hero section with SCID branding
@@ -339,6 +342,9 @@ The home page (`/`) is the profile hub for logged-in users. Implemented.
 - [x] `/admin/apps` SvelteKit page — filter tabs (pending / approved / rejected / all), approve/reject buttons, reject with reason modal
 - [x] RSI org membership scraping (`/citizens/<handle>/organizations`) + caching in SQLite
 - [x] `rsi:<SID>`-prefixed Pocket ID groups synced from org SIDs on verification and refresh
+- [x] App directory listing — `listed` flag on `app_registrations`; approved apps with a launch URL can opt into the public directory; owners toggle via "List in App Directory" checkbox in the app edit form; requires `approved` status
+- [x] `GET /api/apps/directory` — public endpoint returning minimal `{id, name, launch_url, has_logo, verified_only}` for all listed+approved apps; no auth required
+- [x] `/discover` SvelteKit page — app cards with logo, name, verified-only badge, launch link; linked from header nav for authenticated users
 
 ### Phase 3: Polish & Hardening
 - [x] Rate limiting on verification and API endpoints — Cloudflare Turnstile on signup, moved to dedicated `/register` page
@@ -352,14 +358,15 @@ The home page (`/`) is the profile hub for logged-in users. Implemented.
 - [x] Group members endpoint fixed — uses `GET /api/users?groupId=` instead of non-existent `/api/user-groups/{id}/members`
 - [x] Impressum page (`/impressum`) with obfuscated contact info, linked from footer
 - [x] Header branding — "My SCID" as site name, "Unofficial Star Citizen Identity Provider" as tagline
-- [x] Profile card shows next org re-sync time (human relative, e.g. "in 3 days")
-- [ ] Audit logging
-- [ ] Monitoring & health checks
+- [x] Profile card shows next org re-sync time (human relative, e.g. "in 3 days"); `next_sync_at` now correctly returned by `POST /api/verify/refresh` (was missing, causing it to vanish from UI after refresh)
+- [x] Sign out button added to header nav — clears `localStorage` token and redirects to `/`
+- [x] Audit logging
+- [x] Monitoring & health checks
 - [x] User documentation — GitHub Pages docs site (`docs/`) with integration guide, OIDC claims reference, setup instructions
 
 ### Phase 4: Future Enhancements
-- [ ] Community portal / directory of fan sites using SCID
-- [ ] Re-verification: detect RSI handle reassignment or account deletion
+- [x] Community portal / directory of fan sites using SCID — `/discover` page + `GET /api/apps/directory` (see Phase 2)
+- [x] Re-verification / handle change — "Change RSI handle" link on profile card triggers inline amber warning → continues to `/verify` wizard; wizard shows a change-handle banner when accessed this way; backend (`handleVerifyStart`) already supports overwriting an existing verified handle
 
 ---
 

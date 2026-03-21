@@ -11,6 +11,7 @@
   let refreshing = $state(false);
   let deleting = $state(false);
   let showDeleteConfirm = $state(false);
+  let showReVerifyConfirm = $state(false);
   let avatarLoadFailed = $state(false);
 
   async function handleRefresh() {
@@ -169,13 +170,38 @@
             Cancel
           </button>
         </div>
+      {:else if showReVerifyConfirm}
+        <div class="mt-4 flex items-center gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3">
+          <p class="flex-1 text-sm text-amber-300/90"><strong>Heads up:</strong> This replaces your current RSI handle. You'll need to place a new token in your RSI bio to complete the change.</p>
+          <a
+            href="/verify"
+            class="rounded-lg bg-amber-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-amber-700"
+          >
+            Continue
+          </a>
+          <button
+            onclick={() => (showReVerifyConfirm = false)}
+            class="rounded-lg border border-[#1e3a5f] px-4 py-1.5 text-sm text-[#e2e8f0]/60 transition-colors hover:text-[#e2e8f0]/90"
+          >
+            Cancel
+          </button>
+        </div>
       {:else}
-        <button
-          onclick={() => (showDeleteConfirm = true)}
-          class="mt-3 text-xs text-red-400/60 transition-colors hover:text-red-400/90"
-        >
-          Delete account
-        </button>
+        <div class="mt-3 flex items-center gap-4">
+          <button
+            onclick={() => (showReVerifyConfirm = true)}
+            class="text-xs text-amber-500/60 transition-colors hover:text-amber-400/90"
+          >
+            Change RSI handle
+          </button>
+          <span class="text-[#1e3a5f]">·</span>
+          <button
+            onclick={() => (showDeleteConfirm = true)}
+            class="text-xs text-red-400/60 transition-colors hover:text-red-400/90"
+          >
+            Delete account
+          </button>
+        </div>
       {/if}
     </div>
   </div>

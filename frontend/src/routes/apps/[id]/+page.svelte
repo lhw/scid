@@ -37,6 +37,7 @@
   let editIsPublic = $state(false);
   let editPkceRequired = $state(false);
   let editVerifiedOnly = $state(false);
+  let editListed = $state(false);
   let editErrors = $state<Record<string, string>>({});
 
   onMount(async () => {
@@ -73,6 +74,7 @@
     editIsPublic = app.is_public;
     editPkceRequired = app.pkce_required;
     editVerifiedOnly = app.verified_only;
+    editListed = app.listed ?? false;
     editErrors = {};
     editing = true;
   }
@@ -106,6 +108,7 @@
         is_public: editIsPublic,
         pkce_required: editPkceRequired,
         verified_only: editVerifiedOnly,
+        listed: editListed,
       };
       app = await updateApp(appId, req);
       editing = false;
@@ -410,6 +413,23 @@
               </div>
             </label>
           </div>
+
+          {#if app?.status === 'approved'}
+            <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] p-3">
+              <input
+                type="checkbox"
+                bind:checked={editListed}
+                disabled={!editLaunchURL.trim()}
+                class="mt-0.5 accent-[#00d4ff] disabled:cursor-not-allowed disabled:opacity-40"
+              />
+              <div>
+                <p class="text-sm font-medium text-[#e2e8f0]">List in App Directory</p>
+                <p class="mt-0.5 text-xs text-[#e2e8f0]/40">
+                  Show this app on the public Discover page — requires a Launch URL.
+                </p>
+              </div>
+            </label>
+          {/if}
         </div>
 
         <div class="mt-5 flex items-center gap-3">

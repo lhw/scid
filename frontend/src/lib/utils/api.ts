@@ -132,6 +132,7 @@ export interface AppRegistration {
   is_public: boolean;
   pkce_required: boolean;
   verified_only: boolean;
+  listed: boolean;
   has_logo: boolean;
   status: string; // "pending" | "approved" | "rejected"
   rejection_reason?: string;
@@ -146,10 +147,28 @@ export interface CreateAppRequest {
   is_public: boolean;
   pkce_required: boolean;
   verified_only: boolean;
+  listed?: boolean;
+}
+
+export interface DirectoryApp {
+  id: string;
+  name: string;
+  launch_url: string;
+  has_logo: boolean;
+  verified_only: boolean;
 }
 
 export async function listApps(): Promise<AppRegistration[]> {
   const res = await fetch("/api/apps", { headers: authHeader() });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Unknown error" }));
+    throw new Error(err.error ?? `Status ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function listPublicApps(): Promise<DirectoryApp[]> {
+  const res = await fetch("/api/apps/directory");
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
     throw new Error(err.error ?? `Status ${res.status}`);
