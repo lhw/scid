@@ -62,16 +62,9 @@
           {/if}
           <a
             href="{PUBLIC_POCKET_ID_URL}"
-            target="_blank"
-            rel="noopener"
             class="flex items-center gap-1.5 rounded-lg border border-[#1e3a5f] bg-[#0d1526] px-3.5 py-1.5 text-xs font-medium text-[#e2e8f0]/70 transition-colors hover:border-[#00d4ff]/40 hover:text-[#00d4ff]"
           >
             Manage Account
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-              <polyline points="15 3 21 3 21 9"/>
-              <line x1="10" y1="14" x2="21" y2="3"/>
-            </svg>
           </a>
         </div>
       {/if}

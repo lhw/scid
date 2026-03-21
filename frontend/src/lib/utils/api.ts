@@ -40,9 +40,14 @@ function authHeader(): Record<string, string> {
 }
 
 // Request a one-use Pocket ID signup token so the frontend can redirect a new
-// user to Pocket ID's /signup page.
-export async function getSignupToken(): Promise<string> {
-  const res = await fetch("/api/auth/signup-token", { method: "POST" });
+// user to Pocket ID's /signup page. Pass the Cloudflare Turnstile challenge
+// response token when captcha validation is enabled on the backend.
+export async function getSignupToken(turnstileToken?: string): Promise<string> {
+  const res = await fetch("/api/auth/signup-token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ turnstile_token: turnstileToken ?? "" }),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Unknown error" }));
     throw new Error(err.error ?? `Status ${res.status}`);

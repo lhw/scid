@@ -192,6 +192,33 @@
     </div>
   {/if}
 
+{:else if status?.authenticated}
+  <!-- Authenticated but not yet RSI-verified — skip the marketing pitch and
+       show a focused "complete your verification" card instead. -->
+  <div class="mx-auto w-full max-w-2xl px-6 py-16">
+    <div class="rounded-2xl border border-[#1e3a5f] bg-[#0d1526] p-10 text-center shadow-[0_0_40px_rgba(0,212,255,0.05)]">
+      <div class="mb-5 inline-flex h-16 w-16 items-center justify-center rounded-full border border-[#00d4ff]/30 bg-[#00d4ff]/10">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-[#00d4ff]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+      </div>
+      <h1 class="mb-2 text-2xl font-bold text-[#e2e8f0]">
+        Welcome{status.username ? `, ${status.username}` : ''}!
+      </h1>
+      <p class="mx-auto mb-8 max-w-md text-sm leading-relaxed text-[#e2e8f0]/60">
+        Your SCID account is ready. The next step is linking your RSI identity —
+        once verified, fan sites can recognise you as a real citizen automatically.
+      </p>
+      <a
+        href="/verify"
+        class="inline-flex items-center gap-2 rounded-lg bg-[#00d4ff] px-8 py-3 text-base font-semibold text-[#0a0e1a] shadow-[0_0_24px_rgba(0,212,255,0.2)] transition-all hover:bg-[#00b8dc] hover:shadow-[0_0_32px_rgba(0,212,255,0.3)]"
+      >
+        Verify RSI Identity →
+      </a>
+    </div>
+  </div>
+
 {:else}
   <div class="mx-auto w-full max-w-6xl px-6 py-16">
     <section class="mb-20 text-center">

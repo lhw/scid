@@ -140,11 +140,15 @@ func (s *Server) handleVerifyConfirm(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.WarnContext(r.Context(), "RSI profile fetch failed",
 			"handle", vt.RSIHandle, "err", err)
+		metricVerifications.WithLabelValues("fetch_error").Inc()
 		writeError(w, http.StatusBadGateway, "could not fetch RSI profile")
 		return
 	}
 
 	if !rsi.ContainsToken(profile, vt.Token) {
+		auditLog(r.Context(), "rsi.verify.failed",
+			"user_id", user.ID, "handle", vt.RSIHandle, "reason", "token_not_found")
+		metricVerifications.WithLabelValues("token_mismatch").Inc()
 		writeJSON(w, http.StatusOK, confirmResponse{
 			Verified: false,
 			Message:  "token not found in bio",
@@ -155,9 +159,13 @@ func (s *Server) handleVerifyConfirm(w http.ResponseWriter, r *http.Request) {
 	if err := s.completeVerification(r.Context(), user.ID, vt, profile); err != nil {
 		slog.ErrorContext(r.Context(), "complete verification failed",
 			"user_id", user.ID, "handle", vt.RSIHandle, "err", err)
+		metricVerifications.WithLabelValues("error").Inc()
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+
+	auditLog(r.Context(), "rsi.verified", "user_id", user.ID, "handle", vt.RSIHandle)
+	metricVerifications.WithLabelValues("success").Inc()
 
 	if err := s.store.DeleteTokenByUserID(r.Context(), user.ID); err != nil {
 		slog.WarnContext(r.Context(), "delete token failed", "user_id", user.ID, "err", err)
@@ -222,6 +230,13 @@ func (s *Server) completeVerification(
 
 	// Sync org memberships in the background (non-fatal).
 	go s.syncUserOrgs(context.Background(), userID, vt.RSIHandle)
+
+	// Seed the background org re-sync schedule so the job knows when this
+	// user is next due. synced_at = now means the first background sync fires
+	// ~7 days from today.
+	if err := s.store.UpsertOrgSync(context.Background(), userID, vt.RSIHandle, time.Now()); err != nil {
+		slog.Warn("verify: seed org sync entry", "user_id", userID, "err", err)
+	}
 
 	return nil
 }
@@ -407,6 +422,11 @@ func (s *Server) handleVerifyRefresh(w http.ResponseWriter, r *http.Request) {
 	// Sync org memberships synchronously during refresh so the response includes up-to-date orgs.
 	s.syncUserOrgs(r.Context(), user.ID, handle)
 
+	// Reset the re-sync timer so the background job won't fire again for 7 days.
+	if err := s.store.UpsertOrgSync(r.Context(), user.ID, handle, time.Now()); err != nil {
+		slog.Warn("verify: update org sync entry after refresh", "user_id", user.ID, "err", err)
+	}
+
 	// Return the same shape as GET /api/verify/status for easy consumption.
 	resp := statusResponse{
 		Authenticated: true,
@@ -447,6 +467,7 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.InfoContext(r.Context(), "account deleted", "user_id", user.ID)
+	auditLog(r.Context(), "account.deleted", "user_id", user.ID, "username", user.Username)
 	w.WriteHeader(http.StatusNoContent)
 }
 

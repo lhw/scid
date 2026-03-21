@@ -132,8 +132,8 @@ func TestFetchProfile_CitizenRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchProfile: %v", err)
 	}
-	if profile.CitizenRecord != "#40746" {
-		t.Errorf("expected CitizenRecord=#40746, got: %q", profile.CitizenRecord)
+	if profile.CitizenRecord != "40746" {
+		t.Errorf("expected CitizenRecord=40746, got: %q", profile.CitizenRecord)
 	}
 }
 
@@ -198,8 +198,8 @@ func TestFetchProfile_NoBio_CitizenRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchProfile: %v", err)
 	}
-	if profile.CitizenRecord != "#99999" {
-		t.Errorf("expected CitizenRecord=#99999, got: %q", profile.CitizenRecord)
+	if profile.CitizenRecord != "99999" {
+		t.Errorf("expected CitizenRecord=99999, got: %q", profile.CitizenRecord)
 	}
 	if profile.Enlisted != "Jan 01, 2020" {
 		t.Errorf("expected Enlisted='Jan 01, 2020', got: %q", profile.Enlisted)

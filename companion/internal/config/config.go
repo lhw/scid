@@ -22,6 +22,11 @@ type Config struct {
 	// RequireAppApproval controls whether newly registered OIDC clients require
 	// admin approval before they become active.  Defaults to true.
 	RequireAppApproval bool
+
+	// TurnstileSecretKey is the Cloudflare Turnstile secret used to validate
+	// captcha responses server-side. If empty, captcha validation is skipped
+	// (useful for local development).
+	TurnstileSecretKey string
 }
 
 // Load reads configuration from environment variables, applying defaults where
@@ -33,6 +38,7 @@ func Load() (*Config, error) {
 		PocketIDInternalURL: getEnv("POCKET_ID_INTERNAL_URL", "http://pocket-id:3000"),
 		PocketIDAdminAPIKey: os.Getenv("POCKET_ID_ADMIN_API_KEY"),
 		RequireAppApproval:  getEnv("APP_REQUIRE_APPROVAL", "true") != "false",
+		TurnstileSecretKey:  os.Getenv("TURNSTILE_SECRET_KEY"),
 	}
 
 	if cfg.PocketIDAdminAPIKey == "" {

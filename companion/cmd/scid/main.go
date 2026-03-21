@@ -34,6 +34,11 @@ func main() {
 
 	srv := api.New(cfg, st)
 
+	// Background job: re-verify all verified users weekly.
+	jobCtx, cancelJobs := context.WithCancel(context.Background())
+	defer cancelJobs()
+	srv.StartReverifyJob(jobCtx)
+
 	httpServer := &http.Server{
 		Addr:         cfg.ListenAddr,
 		Handler:      srv,
@@ -55,6 +60,7 @@ func main() {
 	<-quit
 
 	slog.Info("shutting down server")
+	cancelJobs() // stop background jobs first
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 

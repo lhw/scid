@@ -41,18 +41,21 @@ async function generateChallenge(verifier: string): Promise<string> {
 }
 
 // ── Token storage ─────────────────────────────────────────────────────────────
+// The access token lives in localStorage so it survives tab closes and new
+// tabs.  The PKCE verifier and state use sessionStorage because they are
+// short-lived, per-flow values that must not bleed across browser sessions.
 
 export function getAccessToken(): string | null {
-  if (typeof sessionStorage === 'undefined') return null;
-  return sessionStorage.getItem(TOKEN_KEY);
+  if (typeof localStorage === 'undefined') return null;
+  return localStorage.getItem(TOKEN_KEY);
 }
 
 export function setAccessToken(token: string): void {
-  sessionStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem(TOKEN_KEY, token);
 }
 
 export function clearAccessToken(): void {
-  sessionStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(TOKEN_KEY);
 }
 
 // ── Auth flow ─────────────────────────────────────────────────────────────────

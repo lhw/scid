@@ -525,6 +525,60 @@ func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 	return nil
 }
 
+// groupMembersPage is the paginated user list returned by the group members API.
+type groupMembersPage struct {
+	Data []struct {
+		ID       string `json:"id"`
+		Username string `json:"username"`
+		Email    string `json:"email"`
+	} `json:"data"`
+	Pagination struct {
+		TotalItems   int `json:"totalItems"`
+		TotalPages   int `json:"totalPages"`
+		CurrentPage  int `json:"currentPage"`
+		ItemsPerPage int `json:"itemsPerPage"`
+	} `json:"pagination"`
+}
+
+// ListGroupMembers returns all users who belong to the named group.
+// It pages through the full result set automatically.
+func (c *Client) ListGroupMembers(ctx context.Context, groupName string) ([]User, error) {
+	group, err := c.FindGroupByName(ctx, groupName)
+	if err != nil {
+		return nil, fmt.Errorf("find group %q: %w", groupName, err)
+	}
+	if group == nil {
+		return nil, nil // group doesn't exist yet — no members
+	}
+
+	var users []User
+	page := 1
+	for {
+		u := fmt.Sprintf("%s/api/users?groupId=%s&page=%d&limit=100",
+			c.baseURL, url.PathEscape(group.ID), page)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		if err != nil {
+			return nil, fmt.Errorf("build request: %w", err)
+		}
+		c.setAdminAuth(req)
+
+		var result groupMembersPage
+		if err := c.do(req, &result); err != nil {
+			return nil, fmt.Errorf("list group members (page %d): %w", page, err)
+		}
+
+		for _, m := range result.Data {
+			users = append(users, User{ID: m.ID, Username: m.Username, Email: m.Email})
+		}
+
+		if page >= result.Pagination.TotalPages || result.Pagination.TotalPages == 0 {
+			break
+		}
+		page++
+	}
+	return users, nil
+}
+
 func (c *Client) setAdminAuth(req *http.Request) {
 	req.Header.Set("X-API-Key", c.adminKey)
 }
@@ -557,4 +611,24 @@ func sanitizeBody(b []byte) string {
 		return string(b[:200]) + "\u2026"
 	}
 	return string(b)
+}
+
+// Ping verifies that Pocket ID is reachable by fetching the OIDC discovery
+// document. Any non-5xx response (including 404) is treated as "reachable".
+func (c *Client) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.baseURL+"/.well-known/openid-configuration", nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body) //nolint:errcheck — draining for connection reuse
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("pocket-id returned status %d", resp.StatusCode)
+	}
+	return nil
 }

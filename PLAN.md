@@ -342,11 +342,11 @@ The home page (`/`) is the profile hub for logged-in users. Implemented.
 
 ### Phase 3: Polish & Hardening
 - [ ] Rate limiting on verification and API endpoints
-- [ ] Periodic re-verification background job
+- [x] Periodic re-verification background job — weekly goroutine re-fetches profile + orgs for all `verified` group members (`internal/api/reverify.go`)
+- [x] Cloudflare Turnstile captcha on signup — server-side validation in `register.go`, widget in `verify/+page.svelte`; skipped when `TURNSTILE_SECRET_KEY` is unset (dev mode)
 - [ ] Audit logging
 - [ ] Monitoring & health checks
 - [ ] User documentation / onboarding guide
-- [ ] `POST /api/account/delete` — permanently delete account from Pocket ID and log out
 
 ### Phase 4: Future Enhancements
 - [ ] Community portal / directory of fan sites using SCID

@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
   import { handleCallback } from '$lib/utils/auth.js';
 
   let error = $state('');
@@ -26,7 +25,10 @@
 
     try {
       const returnPath = await handleCallback(code, state);
-      await goto(returnPath, { replaceState: true });
+      // Use a full-page navigation so the layout re-mounts and picks up the
+      // newly-stored token.  A client-side goto() would keep the layout
+      // mounted, causing the auth-state onMount check to never re-run.
+      window.location.replace(returnPath);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Authentication failed.';
       working = false;

@@ -14,7 +14,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /scid ./cmd/scid
 # ---------------------------------------------------------------------------
 FROM alpine:3.20 AS runner
 
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata curl
 
 # Run as non-root
 RUN addgroup -S scid && adduser -S scid -G scid
@@ -30,5 +30,8 @@ RUN mkdir -p /data && chown scid:scid /data
 USER scid
 
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -sf http://localhost:8080/api/health || exit 1
 
 ENTRYPOINT ["/app/scid"]

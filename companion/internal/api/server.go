@@ -1,10 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -17,20 +17,13 @@ import (
 	"github.com/lhw/scid/companion/internal/store"
 )
 
-// tokenCacheEntry holds a cached userinfo result.
-type tokenCacheEntry struct {
-	user      *pocketid.User
-	expiresAt time.Time
-}
-
 // Server wires together dependencies and the HTTP router.
 type Server struct {
-	cfg        *config.Config
-	store      *store.Store
-	pid        *pocketid.Client
-	scraper    *rsi.Scraper
-	router     *chi.Mux
-	tokenCache sync.Map // token → *tokenCacheEntry
+	cfg     *config.Config
+	store   *store.Store
+	pid     *pocketid.Client
+	scraper *rsi.Scraper
+	router  *chi.Mux
 }
 
 // New creates a configured Server ready to serve HTTP.
@@ -57,6 +50,7 @@ func (s *Server) buildRouter() *chi.Mux {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(prometheusMiddleware)
 
 	// CORS — allow the frontend origin and localhost dev server.
 	r.Use(cors.Handler(cors.Options{
@@ -69,6 +63,9 @@ func (s *Server) buildRouter() *chi.Mux {
 
 	// TODO: add rate limiting middleware before public launch.
 
+	// /metrics is served on the companion's internal port only and is not
+	// proxied through Caddy — safe for Prometheus scraping within the stack.
+	r.Mount("/metrics", prometheusHandler())
 	r.Get("/api/health", s.handleHealth)
 	// Status is intentionally public — returns {verified:false} when unauthenticated
 	// so the home page can load without a login.
@@ -101,16 +98,50 @@ func (s *Server) buildRouter() *chi.Mux {
 	return r
 }
 
-// handleHealth responds with a simple liveness check.
+// handleHealth returns a structured liveness/readiness check.
+// Returns HTTP 200 while fully healthy or only Pocket ID is unreachable
+// (degraded), and HTTP 503 when the database is unavailable.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
+	// Short deadline so slow upstream responses never stall health probes.
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
 
-const tokenCacheTTL = 30 * time.Second
+	type depStatus struct {
+		Status  string `json:"status"`
+		Message string `json:"message,omitempty"`
+	}
+
+	deps := map[string]depStatus{}
+	overall := "ok"
+	code := http.StatusOK
+
+	if err := s.store.Ping(ctx); err != nil {
+		deps["database"] = depStatus{Status: "error", Message: err.Error()}
+		overall = "degraded"
+		code = http.StatusServiceUnavailable
+	} else {
+		deps["database"] = depStatus{Status: "ok"}
+	}
+
+	// Pocket ID being temporarily unreachable is reported as degraded (not 503)
+	// so that companion health checks don't flap during Pocket ID restarts.
+	if err := s.pid.Ping(ctx); err != nil {
+		deps["pocket_id"] = depStatus{Status: "error", Message: err.Error()}
+		if overall == "ok" {
+			overall = "degraded"
+		}
+	} else {
+		deps["pocket_id"] = depStatus{Status: "ok"}
+	}
+
+	writeJSON(w, code, map[string]any{
+		"status": overall,
+		"deps":   deps,
+	})
+}
 
 // bearerAuthMiddleware validates the Authorization: Bearer token with Pocket ID
 // and stores the resolved *pocketid.User in the request context.
-// Results are cached for tokenCacheTTL to avoid hammering Pocket ID's rate limit.
 func (s *Server) bearerAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := extractBearerToken(r)
@@ -119,27 +150,12 @@ func (s *Server) bearerAuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Serve from cache if the entry is still fresh.
-		if v, ok := s.tokenCache.Load(token); ok {
-			e := v.(*tokenCacheEntry)
-			if time.Now().Before(e.expiresAt) {
-				next.ServeHTTP(w, r.WithContext(withUser(r.Context(), e.user)))
-				return
-			}
-			s.tokenCache.Delete(token)
-		}
-
 		user, err := s.pid.GetCurrentUser(r.Context(), token)
 		if err != nil {
 			slog.WarnContext(r.Context(), "bearer auth failed", "err", err)
 			writeError(w, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}
-
-		s.tokenCache.Store(token, &tokenCacheEntry{
-			user:      user,
-			expiresAt: time.Now().Add(tokenCacheTTL),
-		})
 
 		next.ServeHTTP(w, r.WithContext(withUser(r.Context(), user)))
 	})

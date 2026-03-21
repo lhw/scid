@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { untrack } from 'svelte';
-  import { startVerify, confirmVerify, getSignupToken } from '$lib/utils/api.js';
+  import { startVerify, confirmVerify } from '$lib/utils/api.js';
   import { getAccessToken, login } from '$lib/utils/auth.js';
   import { CircleCheckBig, CircleX, Copy, Check, LoaderCircle, LogIn, UserPlus } from '@lucide/svelte';
   import type { PageData } from './$types';
@@ -13,24 +13,11 @@
   // Show a login gate until we confirm there's a token in storage.
   // Starts as null (unknown) then resolves to true/false in onMount.
   let authenticated = $state<boolean | null>(null);
-  let registerLoading = $state(false);
-
   onMount(() => {
     authenticated = getAccessToken() !== null;
     // If we already have a token but status says authenticated, use server signal too
     if (!authenticated && data.status?.authenticated) authenticated = true;
   });
-
-  async function startRegistration() {
-    registerLoading = true;
-    try {
-      const token = await getSignupToken();
-      window.location.href = `${PUBLIC_POCKET_ID_URL}/signup?token=${encodeURIComponent(token)}`;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not start registration. Try again.');
-      registerLoading = false;
-    }
-  }
 
   type Step = 'handle' | 'token' | 'confirming' | 'success' | 'failed';
 
@@ -169,19 +156,13 @@
             <p class="text-xs text-[#e2e8f0]/50">Create a SCID account, then link your RSI identity.</p>
           </div>
         </div>
-        <button
-          onclick={startRegistration}
-          disabled={registerLoading}
-          class="flex w-full items-center justify-center gap-2 rounded-lg border border-[#00d4ff]/40 px-5 py-2.5 text-sm font-semibold text-[#00d4ff] transition-colors hover:bg-[#00d4ff]/10 disabled:cursor-not-allowed disabled:opacity-50"
+        <a
+          href="/register"
+          class="flex w-full items-center justify-center gap-2 rounded-lg border border-[#00d4ff]/40 px-5 py-2.5 text-sm font-semibold text-[#00d4ff] transition-colors hover:bg-[#00d4ff]/10"
         >
-          {#if registerLoading}
-            <LoaderCircle class="h-4 w-4 animate-spin" />
-            Opening registration…
-          {:else}
-            <UserPlus class="h-4 w-4" />
-            Create a SCID account →
-          {/if}
-        </button>
+          <UserPlus class="h-4 w-4" />
+          Create a SCID account →
+        </a>
         <p class="mt-3 text-center text-xs text-[#e2e8f0]/40">
           You'll set up a passkey on the next page.<br />After that, come back here to link your RSI handle.
         </p>

@@ -161,6 +161,10 @@ func parseProfile(handle string, doc *html.Node) *Profile {
 	}
 
 	walk(doc)
+
+	// Normalise CitizenRecord to the integer-only form (strip leading "#").
+	p.CitizenRecord = strings.TrimLeft(strings.TrimSpace(p.CitizenRecord), "#")
+
 	return p
 }
 

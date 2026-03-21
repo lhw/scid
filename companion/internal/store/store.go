@@ -49,6 +49,16 @@ CREATE TABLE IF NOT EXISTS app_registrations (
     verified_only INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
+
+-- user_org_sync tracks when each verified user's RSI org memberships were
+-- last synced by the background re-verify job. synced_at is initialised to
+-- the user's rsi_verified_at timestamp so the initial crop of re-syncs is
+-- spread out over time rather than all firing at once.
+CREATE TABLE IF NOT EXISTS user_org_sync (
+    pocket_id_user_id TEXT PRIMARY KEY,
+    handle TEXT NOT NULL,
+    synced_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
 `
 
 // migrations adds columns that were introduced after initial schema creation.
@@ -455,4 +465,67 @@ ORDER BY uo.is_main DESC, uo.sid ASC`
 		result = append(result, d)
 	}
 	return result, rows.Err()
+}
+
+// OrgSyncEntry records the last time a user's RSI org memberships were synced.
+type OrgSyncEntry struct {
+	PocketIDUserID string
+	Handle         string
+	SyncedAt       time.Time
+}
+
+// UpsertOrgSync sets (or updates) the org sync timestamp for a user.
+func (s *Store) UpsertOrgSync(ctx context.Context, userID, handle string, syncedAt time.Time) error {
+	const q = `INSERT OR REPLACE INTO user_org_sync (pocket_id_user_id, handle, synced_at) VALUES (?, ?, ?)`
+	_, err := s.db.ExecContext(ctx, q, userID, handle, syncedAt.UTC().Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("upsert org sync: %w", err)
+	}
+	return nil
+}
+
+// InsertOrgSyncIfMissing seeds a sync entry only if none exists for this user.
+// Used during startup to enroll existing verified users; INSERT OR IGNORE leaves
+// already-scheduled users undisturbed.
+func (s *Store) InsertOrgSyncIfMissing(ctx context.Context, userID, handle string, syncedAt time.Time) error {
+	const q = `INSERT OR IGNORE INTO user_org_sync (pocket_id_user_id, handle, synced_at) VALUES (?, ?, ?)`
+	_, err := s.db.ExecContext(ctx, q, userID, handle, syncedAt.UTC().Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("insert org sync: %w", err)
+	}
+	return nil
+}
+
+// ListExpiredOrgSyncs returns all entries where synced_at is older than cutoff,
+// ordered oldest-first so the most-stale users are processed first.
+func (s *Store) ListExpiredOrgSyncs(ctx context.Context, cutoff time.Time) ([]OrgSyncEntry, error) {
+	const q = `
+SELECT pocket_id_user_id, handle, synced_at
+FROM user_org_sync
+WHERE synced_at < ?
+ORDER BY synced_at ASC`
+	rows, err := s.db.QueryContext(ctx, q, cutoff.UTC().Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("query expired org syncs: %w", err)
+	}
+	defer rows.Close()
+
+	var result []OrgSyncEntry
+	for rows.Next() {
+		var e OrgSyncEntry
+		var syncedAt string
+		if err := rows.Scan(&e.PocketIDUserID, &e.Handle, &syncedAt); err != nil {
+			return nil, fmt.Errorf("scan org sync: %w", err)
+		}
+		e.SyncedAt, _ = parseTime(syncedAt)
+		result = append(result, e)
+	}
+	return result, rows.Err()
+}
+
+// Ping verifies the SQLite connection is alive by running a trivial query.
+func (s *Store) Ping(ctx context.Context) error {
+	row := s.db.QueryRowContext(ctx, "SELECT 1")
+	var n int
+	return row.Scan(&n)
 }
