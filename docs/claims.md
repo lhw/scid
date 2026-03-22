@@ -7,6 +7,8 @@ title: OIDC Claims Reference
 
 These claims are returned in the **ID token** and on the **`/api/oidc/userinfo`** endpoint when the user grants the corresponding scopes.
 
+SCID also exposes a separate status endpoint at **`/api/verify/status`** for the frontend. That endpoint includes SCID-specific fields such as `authenticated`, `verified`, `admin`, `pending_handle`, `pending_expires_at`, `next_sync_at`, and cached org metadata. Those fields are not OIDC claims.
+
 ## Standard claims (`openid profile email`)
 
 | Claim | Type | Description |
@@ -27,6 +29,8 @@ These are populated after a user completes RSI bio verification. They are always
 | `rsi_enlisted` | string (ISO 8601 date) | `"2013-04-16"` | RSI enlistment date from the public profile |
 | `rsi_citizen_record` | optional(string) | `"40746"` | UEE Citizen Record number (numeric, not present on every profile) |
 
+The `rsi_citizen_record` claim is omitted when RSI shows the value as `n/a` or does not provide one.
+
 ## Group claims
 
 | Claim | Type | Description |
@@ -40,6 +44,12 @@ These are populated after a user completes RSI bio verification. They are always
 | `verified` | User has a confirmed RSI identity |
 | `admin` | SCID site administrator |
 | `rsi:<SID>` | Member of RSI org with Spectrum ID `<SID>` (e.g. `rsi:LUG`) |
+
+### Notes on groups
+
+- `verified` is the canonical signal for RSI identity verification
+- `admin` is used for SCID administration in the companion service and UI
+- `rsi:<SID>` groups are always namespaced to avoid collisions with built-in Pocket ID groups
 
 ### Using groups for access control
 
@@ -71,6 +81,36 @@ if 'verified' not in user_info.get('groups', []):
   "rsi_enlisted": "2012-10-18",
   "rsi_citizen_record": "40746",
   "groups": ["verified", "rsi:SPAWO", "rsi:LUG"]
+}
+```
+
+## SCID status example
+
+The status endpoint combines auth state, verification state, and cached profile data for the signed-in user:
+
+```json
+{
+  "authenticated": true,
+  "verified": true,
+  "admin": false,
+  "user_id": "2fad53a2-de28-42c4-8ef1-efc4fbf899d8",
+  "username": "example",
+  "handle": "CaptainKirk",
+  "verified_at": "2025-11-03T14:22:00Z",
+  "enlisted": "2012-10-18",
+  "citizen_record": "40746",
+  "pending_handle": "CaptainKirk",
+  "pending_expires_at": "2025-11-04T14:22:00Z",
+  "next_sync_at": "2025-11-10T14:22:00Z",
+  "orgs": [
+    {
+      "sid": "SPAWO",
+      "name": "Space Wombats",
+      "rank_name": "Oldest",
+      "is_main": true,
+      "has_logo": true
+    }
+  ]
 }
 ```
 

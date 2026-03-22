@@ -10,7 +10,23 @@ My SCID is a standard [OpenID Connect (OIDC)](https://openid.net/developers/how-
 ## Prerequisites
 
 - A verified SCID account (you need to link your RSI handle first)
-- A registered application (create one at [My SCID → My Apps](https://scid.my/apps))
+- A registered application in [My Apps](https://id.scid.my/apps)
+
+## Registering an application
+
+In **My Apps**, the current registration flow lets you configure:
+
+- Application name
+- Launch URL for the public app directory
+- One or more redirect URIs
+- Optional logout redirect URIs
+- Public client mode for SPAs and mobile apps
+- PKCE requirement
+- Verified-only access
+- Optional app listing in the public directory
+- Optional app logo upload
+
+New apps may require admin approval depending on the instance configuration.
 
 ## OIDC Discovery
 
@@ -73,7 +89,7 @@ See [OIDC Claims Reference](claims.md) for all returned fields.
 
 ## Restricting access to verified users
 
-Set the OIDC client's required groups to `verified` in the My SCID admin panel. Users not in the `verified` group will be denied access before the consent screen.
+Set the OIDC client's required groups to `verified` in the My SCID admin panel or check the `groups` claim in your application. Users not in the `verified` group will be denied access before the consent screen when the client is configured that way.
 
 In your own code you can also check:
 
@@ -82,6 +98,10 @@ In your own code you can also check:
 ```
 
 If `"verified"` is present in the `groups` claim, the user has a confirmed RSI identity.
+
+## Claim reference
+
+See [OIDC Claims Reference](claims.md) for the current claim set and the separate SCID status fields returned by `/api/verify/status`.
 
 ## Example: Python (authlib)
 
