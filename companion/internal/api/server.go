@@ -131,6 +131,8 @@ func (s *Server) buildRouter() *chi.Mux {
 
 	// Serve the embedded SvelteKit frontend for every path that isn't an API route.
 	subFS, _ := fs.Sub(frontend.FS, "dist")
+	// /config.js is generated at request time so the image stays deployment-agnostic.
+	r.Get("/config.js", s.handleRuntimeConfig)
 	r.Handle("/*", spaHandler(subFS))
 
 	return r
@@ -141,6 +143,10 @@ func (s *Server) buildRouter() *chi.Mux {
 // their filenames are content-hashed by the build tool.
 func spaHandler(fsys fs.FS) http.Handler {
 	fileServer := http.FileServer(http.FS(fsys))
+	indexHTML, err := fs.ReadFile(fsys, "index.html")
+	if err != nil {
+		indexHTML = []byte(`<!doctype html><html><head><meta charset="utf-8"><title>SCID</title></head><body></body></html>`)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Aggressively cache SvelteKit's hashed asset bundles.
 		if strings.HasPrefix(r.URL.Path, "/_app/") {
@@ -153,11 +159,30 @@ func spaHandler(fsys fs.FS) http.Handler {
 			path = "."
 		}
 		if _, err := fsys.Open(path); err != nil {
-			r = r.Clone(r.Context())
-			r.URL.Path = "/"
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write(indexHTML)
+			return
 		}
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+// handleRuntimeConfig serves a small JS snippet that injects deployment-specific
+// public environment variables into window.__SCID_PUBLIC_ENV__. The script is
+// loaded by app.html so the Docker image stays fully generic.
+func (s *Server) handleRuntimeConfig(w http.ResponseWriter, r *http.Request) {
+	configJSON, err := json.Marshal(map[string]string{
+		"PUBLIC_POCKET_ID_URL":      s.cfg.OIDCIssuerURL,
+		"PUBLIC_OIDC_CLIENT_ID":     s.cfg.OIDCClientID,
+		"PUBLIC_TURNSTILE_SITE_KEY": s.cfg.TurnstileSiteKey,
+	})
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write([]byte("window.__SCID_PUBLIC_ENV__=" + string(configJSON) + ";"))
 }
 
 // handleHealth returns a structured liveness/readiness check.

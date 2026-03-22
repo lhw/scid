@@ -31,6 +31,10 @@ type Config struct {
 	// OIDCClientID is the frontend client ID used in the Pocket ID auth flow.
 	OIDCClientID string
 
+	// TurnstileSiteKey is the public Cloudflare Turnstile site key exposed to
+	// the frontend at runtime. It is safe to inject into HTML responses.
+	TurnstileSiteKey string
+
 	// CORSAllowedOrigins is the list of allowed CORS origins for the companion API.
 	// Configured via CORS_ALLOWED_ORIGINS (comma-separated). Defaults to production
 	// origin plus localhost for dev convenience.
@@ -66,6 +70,7 @@ func Load() (*Config, error) {
 		SessionCookieSecure: getEnv("SCID_COOKIE_SECURE", "true") != "false",
 		RequireAppApproval:  getEnv("APP_REQUIRE_APPROVAL", "true") != "false",
 		TurnstileSecretKey:  os.Getenv("TURNSTILE_SECRET_KEY"),
+		TurnstileSiteKey:    getEnv("PUBLIC_TURNSTILE_SITE_KEY", ""),
 	}
 
 	for _, o := range strings.Split(getEnv("CORS_ALLOWED_ORIGINS", "https://scid.my,http://localhost:5173"), ",") {

@@ -12,6 +12,10 @@ export default defineConfig({
         target: process.env.VITE_API_BASE ?? "http://localhost:8080",
         changeOrigin: true,
       },
+      "/config.js": {
+        target: process.env.VITE_API_BASE ?? "http://localhost:8080",
+        changeOrigin: true,
+      },
     },
   },
 });

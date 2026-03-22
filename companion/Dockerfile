@@ -5,8 +5,6 @@
 
 # ---------------------------------------------------------------------------
 # Stage 1: Build SvelteKit frontend
-# PUBLIC_* vars are baked into the JS bundle here; they are NOT runtime secrets.
-# Pass them as --build-arg in CI or locally.
 # ---------------------------------------------------------------------------
 FROM node:22-alpine AS frontend-builder
 
@@ -17,14 +15,6 @@ WORKDIR /frontend
 # Install deps first so this layer is cached independently of source changes.
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
-
-ARG PUBLIC_POCKET_ID_URL=https://id.scid.my
-ARG PUBLIC_OIDC_CLIENT_ID=scid-frontend
-ARG PUBLIC_TURNSTILE_SITE_KEY=""
-
-ENV PUBLIC_POCKET_ID_URL=${PUBLIC_POCKET_ID_URL} \
-    PUBLIC_OIDC_CLIENT_ID=${PUBLIC_OIDC_CLIENT_ID} \
-    PUBLIC_TURNSTILE_SITE_KEY=${PUBLIC_TURNSTILE_SITE_KEY}
 
 COPY frontend/ ./
 RUN pnpm build
