@@ -19,6 +19,7 @@ My SCID uses Pocket ID as the OIDC backend and a Go companion service to verify 
 - `frontend/` - SvelteKit frontend for verification, account management, app registration, admin review, and the public app directory
 - `docs/` - GitHub Pages documentation site
 - `docker-compose.yml` - Local stack for Pocket ID, the companion service, the database, and Caddy
+- `docker-compose.prod.yml` - Production stack with PostgreSQL for the companion service
 
 ## Stack
 
@@ -44,7 +45,7 @@ My SCID uses Pocket ID as the OIDC backend and a Go companion service to verify 
 
 ## Local development
 
-See the repository docs and `docker-compose.yml` for the current development and deployment layout.
+See the repository docs, `docker-compose.yml`, and `docker-compose.prod.yml` for the current development and deployment layout.
 
 ## Disclaimer
 

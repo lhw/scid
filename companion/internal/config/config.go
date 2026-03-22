@@ -9,6 +9,10 @@ import (
 
 // Config holds all configuration loaded from environment variables.
 type Config struct {
+	// DatabaseURL is an optional PostgreSQL DSN used for production.
+	// When empty, DatabasePath is used instead.
+	DatabaseURL string
+
 	// ListenAddr is the address the HTTP server binds to.
 	ListenAddr string
 
@@ -52,6 +56,7 @@ type Config struct {
 // appropriate. It returns an error if any required variable is missing.
 func Load() (*Config, error) {
 	cfg := &Config{
+		DatabaseURL:         getEnv("DATABASE_URL", ""),
 		ListenAddr:          getEnv("LISTEN_ADDR", ":8080"),
 		DatabasePath:        getEnv("DATABASE_PATH", "/data/scid.db"),
 		PocketIDInternalURL: getEnv("POCKET_ID_INTERNAL_URL", "http://pocket-id:3000"),
@@ -80,6 +85,15 @@ func Load() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// DatabaseSource returns the configured database source string.
+// PostgreSQL deployments use DatabaseURL; local development falls back to SQLite.
+func (c *Config) DatabaseSource() string {
+	if c.DatabaseURL != "" {
+		return c.DatabaseURL
+	}
+	return c.DatabasePath
 }
 
 func getEnv(key, defaultVal string) string {

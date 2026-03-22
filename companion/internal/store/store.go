@@ -8,17 +8,18 @@ import (
 	"strings"
 	"time"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
 )
 
-const schema = `
+const commonSchema = `
 CREATE TABLE IF NOT EXISTS verification_tokens (
     id TEXT PRIMARY KEY,
     pocket_id_user_id TEXT NOT NULL UNIQUE,
     rsi_handle TEXT NOT NULL,
     token TEXT NOT NULL UNIQUE,
-    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
-    expires_at DATETIME NOT NULL
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
 );
 
 -- org_cache stores RSI org metadata indexed by SID.
@@ -27,7 +28,7 @@ CREATE TABLE IF NOT EXISTS org_cache (
     sid TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     logo_path TEXT NOT NULL DEFAULT '',
-    fetched_at DATETIME NOT NULL DEFAULT (datetime('now'))
+	fetched_at TEXT NOT NULL
 );
 
 -- user_orgs maps Pocket ID user IDs to their RSI org SIDs.
@@ -48,7 +49,7 @@ CREATE TABLE IF NOT EXISTS app_registrations (
     oidc_client_id TEXT NOT NULL UNIQUE,
     owner_user_id TEXT NOT NULL,
     verified_only INTEGER NOT NULL DEFAULT 0,
-    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+	created_at TEXT NOT NULL
 );
 
 -- user_org_sync tracks when each verified user's RSI org memberships were
@@ -58,7 +59,7 @@ CREATE TABLE IF NOT EXISTS app_registrations (
 CREATE TABLE IF NOT EXISTS user_org_sync (
     pocket_id_user_id TEXT PRIMARY KEY,
     handle TEXT NOT NULL,
-    synced_at DATETIME NOT NULL DEFAULT (datetime('now'))
+	synced_at TEXT NOT NULL
 );
 
 -- verified_handles records permanently which RSI handle each SCID user has
@@ -67,14 +68,26 @@ CREATE TABLE IF NOT EXISTS user_org_sync (
 CREATE TABLE IF NOT EXISTS verified_handles (
     rsi_handle TEXT NOT NULL PRIMARY KEY,
     pocket_id_user_id TEXT NOT NULL UNIQUE,
-    verified_at DATETIME NOT NULL DEFAULT (datetime('now'))
+	verified_at TEXT NOT NULL
 );
+`
 
+const sqliteSessionSchema = `
 CREATE TABLE IF NOT EXISTS sessions (
-    token TEXT PRIMARY KEY,
-    data BLOB NOT NULL,
-    expiry REAL NOT NULL
+	token TEXT PRIMARY KEY,
+	data BLOB NOT NULL,
+	expiry REAL NOT NULL
 );
+CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expiry);
+`
+
+const postgresSessionSchema = `
+CREATE TABLE IF NOT EXISTS sessions (
+	token TEXT PRIMARY KEY,
+	data BYTEA NOT NULL,
+	expiry TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expiry);
 `
 
 // migrations adds columns that were introduced after initial schema creation.
@@ -95,18 +108,29 @@ type VerificationToken struct {
 	ExpiresAt      time.Time
 }
 
-// Store provides access to the SQLite database.
+// Store provides access to the companion database.
 type Store struct {
-	db *sql.DB
+	db     *sql.DB
+	driver string
 }
 
-// New opens (or creates) the SQLite database at path and runs migrations.
-func New(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+// New opens (or creates) the database at source and runs migrations.
+// SQLite remains the default; PostgreSQL is selected when source looks like a postgres DSN.
+func New(source string) (*Store, error) {
+	driver := "sqlite"
+	dbDriver := "sqlite"
+	schema := sqliteSessionSchema
+	if IsPostgresDSN(source) {
+		driver = "postgres"
+		dbDriver = "pgx"
+		schema = postgresSessionSchema
+	}
+
+	db, err := sql.Open(dbDriver, source)
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(commonSchema + schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate db: %w", err)
 	}
@@ -115,7 +139,18 @@ func New(path string) (*Store, error) {
 	for _, stmt := range splitMigrations(migrations) {
 		db.Exec(stmt) // nolint:errcheck — intentionally ignoring re-run errors
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, driver: driver}, nil
+}
+
+// Driver reports the store backend in use.
+func (s *Store) Driver() string {
+	return s.driver
+}
+
+// IsPostgresDSN reports whether the provided source string should be opened with the PostgreSQL driver.
+func IsPostgresDSN(source string) bool {
+	lower := strings.ToLower(source)
+	return strings.HasPrefix(lower, "postgres://") || strings.HasPrefix(lower, "postgresql://")
 }
 
 // splitMigrations splits a multi-statement migration string on semicolons.
@@ -127,6 +162,35 @@ func splitMigrations(s string) []string {
 		}
 	}
 	return out
+}
+
+func (s *Store) rebind(query string) string {
+	if s.driver != "postgres" {
+		return query
+	}
+	var b strings.Builder
+	arg := 1
+	for _, r := range query {
+		if r == '?' {
+			b.WriteString(fmt.Sprintf("$%d", arg))
+			arg++
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func (s *Store) execContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return s.db.ExecContext(ctx, s.rebind(query), args...)
+}
+
+func (s *Store) queryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return s.db.QueryContext(ctx, s.rebind(query), args...)
+}
+
+func (s *Store) queryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return s.db.QueryRowContext(ctx, s.rebind(query), args...)
 }
 
 // Close closes the underlying database connection.
@@ -154,13 +218,16 @@ func (s *Store) UpsertToken(ctx context.Context, vt *VerificationToken) (*Verifi
 	if err := s.DeleteTokenByUserID(ctx, vt.PocketIDUserID); err != nil {
 		return nil, err
 	}
+	if vt.CreatedAt.IsZero() {
+		vt.CreatedAt = time.Now().UTC()
+	}
 
 	const q = `
-INSERT INTO verification_tokens (id, pocket_id_user_id, rsi_handle, token, expires_at)
-VALUES (?, ?, ?, ?, ?)`
-	_, err = s.db.ExecContext(ctx, q,
+INSERT INTO verification_tokens (id, pocket_id_user_id, rsi_handle, token, created_at, expires_at)
+VALUES (?, ?, ?, ?, ?, ?)`
+	_, err = s.execContext(ctx, q,
 		vt.ID, vt.PocketIDUserID, vt.RSIHandle, vt.Token,
-		vt.ExpiresAt.UTC().Format(time.RFC3339))
+		vt.CreatedAt.UTC().Format(time.RFC3339), vt.ExpiresAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		return nil, fmt.Errorf("insert token: %w", err)
 	}
@@ -174,7 +241,7 @@ func (s *Store) GetTokenByUserID(ctx context.Context, userID string) (*Verificat
 SELECT id, pocket_id_user_id, rsi_handle, token, created_at, expires_at
 FROM verification_tokens
 WHERE pocket_id_user_id = ?`
-	row := s.db.QueryRowContext(ctx, q, userID)
+	row := s.queryRowContext(ctx, q, userID)
 	return scanToken(row)
 }
 
@@ -184,7 +251,7 @@ func (s *Store) HandleIsLinkedToOtherUser(ctx context.Context, handle, excludeUs
 	// First check the permanent verified_handles table.
 	const q1 = `SELECT COUNT(*) FROM verified_handles WHERE rsi_handle = ? AND pocket_id_user_id != ?`
 	var count int
-	if err := s.db.QueryRowContext(ctx, q1, handle, excludeUserID).Scan(&count); err != nil {
+	if err := s.queryRowContext(ctx, q1, handle, excludeUserID).Scan(&count); err != nil {
 		return false, fmt.Errorf("check verified handle: %w", err)
 	}
 	if count > 0 {
@@ -192,7 +259,7 @@ func (s *Store) HandleIsLinkedToOtherUser(ctx context.Context, handle, excludeUs
 	}
 	// Also check pending verification_tokens.
 	const q2 = `SELECT COUNT(*) FROM verification_tokens WHERE rsi_handle = ? AND pocket_id_user_id != ?`
-	if err := s.db.QueryRowContext(ctx, q2, handle, excludeUserID).Scan(&count); err != nil {
+	if err := s.queryRowContext(ctx, q2, handle, excludeUserID).Scan(&count); err != nil {
 		return false, fmt.Errorf("check handle uniqueness: %w", err)
 	}
 	return count > 0, nil
@@ -207,7 +274,7 @@ VALUES (?, ?, ?)
 ON CONFLICT(rsi_handle) DO UPDATE SET
     pocket_id_user_id = excluded.pocket_id_user_id,
     verified_at       = excluded.verified_at`
-	if _, err := s.db.ExecContext(ctx, q, handle, userID, time.Now().UTC().Format(time.RFC3339)); err != nil {
+	if _, err := s.execContext(ctx, q, handle, userID, time.Now().UTC().Format(time.RFC3339)); err != nil {
 		return fmt.Errorf("upsert verified handle: %w", err)
 	}
 	return nil
@@ -217,7 +284,7 @@ ON CONFLICT(rsi_handle) DO UPDATE SET
 // Called when the user deletes their account.
 func (s *Store) DeleteVerifiedHandleByUserID(ctx context.Context, userID string) error {
 	const q = `DELETE FROM verified_handles WHERE pocket_id_user_id = ?`
-	if _, err := s.db.ExecContext(ctx, q, userID); err != nil {
+	if _, err := s.execContext(ctx, q, userID); err != nil {
 		return fmt.Errorf("delete verified handle: %w", err)
 	}
 	return nil
@@ -226,7 +293,7 @@ func (s *Store) DeleteVerifiedHandleByUserID(ctx context.Context, userID string)
 // DeleteTokenByUserID removes any pending verification token for the user.
 func (s *Store) DeleteTokenByUserID(ctx context.Context, userID string) error {
 	const q = `DELETE FROM verification_tokens WHERE pocket_id_user_id = ?`
-	if _, err := s.db.ExecContext(ctx, q, userID); err != nil {
+	if _, err := s.execContext(ctx, q, userID); err != nil {
 		return fmt.Errorf("delete token: %w", err)
 	}
 	return nil
@@ -289,7 +356,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	if status == "" {
 		status = "approved"
 	}
-	_, err := s.db.ExecContext(ctx, q,
+	_, err := s.execContext(ctx, q,
 		reg.ID, reg.OIDCClientID, reg.OwnerUserID, verifiedOnly, listed, status, reg.RejectionReason,
 		reg.CreatedAt.UTC().Format(time.RFC3339))
 	if err != nil {
@@ -305,7 +372,7 @@ func (s *Store) GetAppRegistrationByClientID(ctx context.Context, oidcClientID s
 SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), created_at
 FROM app_registrations
 WHERE oidc_client_id = ?`
-	return scanAppRegistration(s.db.QueryRowContext(ctx, q, oidcClientID))
+	return scanAppRegistration(s.queryRowContext(ctx, q, oidcClientID))
 }
 
 // ListAppRegistrationsByOwner returns all app registrations for a given user.
@@ -315,13 +382,13 @@ SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COA
 FROM app_registrations
 WHERE owner_user_id = ?
 ORDER BY created_at ASC`
-	return queryAppRegistrations(s.db, ctx, q, ownerUserID)
+	return queryAppRegistrations(s, ctx, q, ownerUserID)
 }
 
 // DeleteAppRegistrationByClientID removes an app registration by OIDC client ID.
 func (s *Store) DeleteAppRegistrationByClientID(ctx context.Context, oidcClientID string) error {
 	const q = `DELETE FROM app_registrations WHERE oidc_client_id = ?`
-	if _, err := s.db.ExecContext(ctx, q, oidcClientID); err != nil {
+	if _, err := s.execContext(ctx, q, oidcClientID); err != nil {
 		return fmt.Errorf("delete app registration: %w", err)
 	}
 	return nil
@@ -334,7 +401,7 @@ func (s *Store) UpdateAppRegistrationVerifiedOnly(ctx context.Context, oidcClien
 		flag = 1
 	}
 	const q = `UPDATE app_registrations SET verified_only = ? WHERE oidc_client_id = ?`
-	if _, err := s.db.ExecContext(ctx, q, flag, oidcClientID); err != nil {
+	if _, err := s.execContext(ctx, q, flag, oidcClientID); err != nil {
 		return fmt.Errorf("update app registration: %w", err)
 	}
 	return nil
@@ -343,7 +410,7 @@ func (s *Store) UpdateAppRegistrationVerifiedOnly(ctx context.Context, oidcClien
 // UpdateAppRegistrationStatus updates the status (and optional rejection reason) for an app.
 func (s *Store) UpdateAppRegistrationStatus(ctx context.Context, oidcClientID, status, rejectionReason string) error {
 	const q = `UPDATE app_registrations SET status = ?, rejection_reason = ? WHERE oidc_client_id = ?`
-	if _, err := s.db.ExecContext(ctx, q, status, rejectionReason, oidcClientID); err != nil {
+	if _, err := s.execContext(ctx, q, status, rejectionReason, oidcClientID); err != nil {
 		return fmt.Errorf("update app registration status: %w", err)
 	}
 	return nil
@@ -356,7 +423,7 @@ func (s *Store) UpdateAppRegistrationListed(ctx context.Context, oidcClientID st
 		flag = 1
 	}
 	const q = `UPDATE app_registrations SET listed = ? WHERE oidc_client_id = ?`
-	if _, err := s.db.ExecContext(ctx, q, flag, oidcClientID); err != nil {
+	if _, err := s.execContext(ctx, q, flag, oidcClientID); err != nil {
 		return fmt.Errorf("update app registration listed: %w", err)
 	}
 	return nil
@@ -369,7 +436,7 @@ SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COA
 FROM app_registrations
 WHERE COALESCE(listed,0) = 1 AND COALESCE(status,'approved') = 'approved'
 ORDER BY created_at ASC`
-	return queryAppRegistrations(s.db, ctx, q)
+	return queryAppRegistrations(s, ctx, q)
 }
 
 // ListPendingAppRegistrations returns all app registrations with status='pending'.
@@ -379,7 +446,7 @@ SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COA
 FROM app_registrations
 WHERE COALESCE(status,'approved') = 'pending'
 ORDER BY created_at ASC`
-	return queryAppRegistrations(s.db, ctx, q)
+	return queryAppRegistrations(s, ctx, q)
 }
 
 // ListAllAppRegistrations returns all app registrations ordered by creation date.
@@ -388,11 +455,11 @@ func (s *Store) ListAllAppRegistrations(ctx context.Context) ([]AppRegistration,
 SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), created_at
 FROM app_registrations
 ORDER BY created_at DESC`
-	return queryAppRegistrations(s.db, ctx, q)
+	return queryAppRegistrations(s, ctx, q)
 }
 
-func queryAppRegistrations(db *sql.DB, ctx context.Context, query string, args ...any) ([]AppRegistration, error) {
-	rows, err := db.QueryContext(ctx, query, args...)
+func queryAppRegistrations(s *Store, ctx context.Context, query string, args ...any) ([]AppRegistration, error) {
+	rows, err := s.queryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query app registrations: %w", err)
 	}
@@ -465,7 +532,7 @@ ON CONFLICT(sid) DO UPDATE SET
     name = excluded.name,
     logo_path = excluded.logo_path,
     fetched_at = excluded.fetched_at`
-	_, err := s.db.ExecContext(ctx, q,
+	_, err := s.execContext(ctx, q,
 		e.SID, e.Name, e.LogoPath, e.FetchedAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("upsert org cache: %w", err)
@@ -478,7 +545,7 @@ func (s *Store) GetOrgCache(ctx context.Context, sid string) (*OrgCacheEntry, er
 	const q = `SELECT sid, name, logo_path, fetched_at FROM org_cache WHERE sid = ?`
 	var e OrgCacheEntry
 	var fetchedAt string
-	err := s.db.QueryRowContext(ctx, q, sid).Scan(&e.SID, &e.Name, &e.LogoPath, &fetchedAt)
+	err := s.queryRowContext(ctx, q, sid).Scan(&e.SID, &e.Name, &e.LogoPath, &fetchedAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -497,7 +564,7 @@ func (s *Store) SetUserOrgs(ctx context.Context, userID string, orgs []UserOrg) 
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM user_orgs WHERE pocket_id_user_id = ?`, userID); err != nil {
+	if _, err := tx.ExecContext(ctx, s.rebind(`DELETE FROM user_orgs WHERE pocket_id_user_id = ?`), userID); err != nil {
 		return fmt.Errorf("delete user orgs: %w", err)
 	}
 
@@ -507,7 +574,7 @@ func (s *Store) SetUserOrgs(ctx context.Context, userID string, orgs []UserOrg) 
 			isMain = 1
 		}
 		const q = `INSERT INTO user_orgs (pocket_id_user_id, sid, rank_name, is_main) VALUES (?, ?, ?, ?)`
-		if _, err := tx.ExecContext(ctx, q, userID, o.SID, o.RankName, isMain); err != nil {
+		if _, err := tx.ExecContext(ctx, s.rebind(q), userID, o.SID, o.RankName, isMain); err != nil {
 			return fmt.Errorf("insert user org: %w", err)
 		}
 	}
@@ -532,7 +599,7 @@ FROM user_orgs uo
 LEFT JOIN org_cache oc ON oc.sid = uo.sid
 WHERE uo.pocket_id_user_id = ?
 ORDER BY uo.is_main DESC, uo.sid ASC`
-	rows, err := s.db.QueryContext(ctx, q, userID)
+	rows, err := s.queryContext(ctx, q, userID)
 	if err != nil {
 		return nil, fmt.Errorf("query user orgs: %w", err)
 	}
@@ -560,8 +627,13 @@ type OrgSyncEntry struct {
 
 // UpsertOrgSync sets (or updates) the org sync timestamp for a user.
 func (s *Store) UpsertOrgSync(ctx context.Context, userID, handle string, syncedAt time.Time) error {
-	const q = `INSERT OR REPLACE INTO user_org_sync (pocket_id_user_id, handle, synced_at) VALUES (?, ?, ?)`
-	_, err := s.db.ExecContext(ctx, q, userID, handle, syncedAt.UTC().Format(time.RFC3339))
+	const q = `
+INSERT INTO user_org_sync (pocket_id_user_id, handle, synced_at)
+VALUES (?, ?, ?)
+ON CONFLICT(pocket_id_user_id) DO UPDATE SET
+    handle = excluded.handle,
+    synced_at = excluded.synced_at`
+	_, err := s.execContext(ctx, q, userID, handle, syncedAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("upsert org sync: %w", err)
 	}
@@ -572,8 +644,8 @@ func (s *Store) UpsertOrgSync(ctx context.Context, userID, handle string, synced
 // Used during startup to enroll existing verified users; INSERT OR IGNORE leaves
 // already-scheduled users undisturbed.
 func (s *Store) InsertOrgSyncIfMissing(ctx context.Context, userID, handle string, syncedAt time.Time) error {
-	const q = `INSERT OR IGNORE INTO user_org_sync (pocket_id_user_id, handle, synced_at) VALUES (?, ?, ?)`
-	_, err := s.db.ExecContext(ctx, q, userID, handle, syncedAt.UTC().Format(time.RFC3339))
+	const q = `INSERT INTO user_org_sync (pocket_id_user_id, handle, synced_at) VALUES (?, ?, ?) ON CONFLICT(pocket_id_user_id) DO NOTHING`
+	_, err := s.execContext(ctx, q, userID, handle, syncedAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("insert org sync: %w", err)
 	}
@@ -583,7 +655,7 @@ func (s *Store) InsertOrgSyncIfMissing(ctx context.Context, userID, handle strin
 // GetOrgSync returns the sync entry for a specific user, or ErrNotFound.
 func (s *Store) GetOrgSync(ctx context.Context, userID string) (OrgSyncEntry, error) {
 	const q = `SELECT pocket_id_user_id, handle, synced_at FROM user_org_sync WHERE pocket_id_user_id = ?`
-	row := s.db.QueryRowContext(ctx, q, userID)
+	row := s.queryRowContext(ctx, q, userID)
 	var e OrgSyncEntry
 	var syncedAt string
 	if err := row.Scan(&e.PocketIDUserID, &e.Handle, &syncedAt); err != nil {
@@ -604,7 +676,7 @@ SELECT pocket_id_user_id, handle, synced_at
 FROM user_org_sync
 WHERE synced_at < ?
 ORDER BY synced_at ASC`
-	rows, err := s.db.QueryContext(ctx, q, cutoff.UTC().Format(time.RFC3339))
+	rows, err := s.queryContext(ctx, q, cutoff.UTC().Format(time.RFC3339))
 	if err != nil {
 		return nil, fmt.Errorf("query expired org syncs: %w", err)
 	}
@@ -623,9 +695,9 @@ ORDER BY synced_at ASC`
 	return result, rows.Err()
 }
 
-// Ping verifies the SQLite connection is alive by running a trivial query.
+// Ping verifies the database connection is alive by running a trivial query.
 func (s *Store) Ping(ctx context.Context) error {
-	row := s.db.QueryRowContext(ctx, "SELECT 1")
+	row := s.queryRowContext(ctx, "SELECT 1")
 	var n int
 	return row.Scan(&n)
 }

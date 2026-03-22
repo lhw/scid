@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/alexedwards/scs/postgresstore"
 	"github.com/alexedwards/scs/sqlite3store"
 	"github.com/alexedwards/scs/v2"
 	"github.com/go-chi/chi/v5"
@@ -36,7 +37,11 @@ type Server struct {
 // New creates a configured Server ready to serve HTTP.
 func New(cfg *config.Config, st *store.Store) *Server {
 	sessionManager := scs.New()
-	sessionManager.Store = sqlite3store.NewWithCleanupInterval(st.DB(), 0)
+	if st.Driver() == "postgres" {
+		sessionManager.Store = postgresstore.NewWithCleanupInterval(st.DB(), 0)
+	} else {
+		sessionManager.Store = sqlite3store.NewWithCleanupInterval(st.DB(), 0)
+	}
 	sessionManager.Lifetime = cfg.SessionTTL
 	sessionManager.Cookie.Name = sessionCookieName(cfg.SessionCookieSecure)
 	sessionManager.Cookie.Path = "/"

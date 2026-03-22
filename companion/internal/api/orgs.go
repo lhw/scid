@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	// orgLogoCacheDir is the directory under DatabasePath's parent where org logos are stored.
+	// orgLogoCacheDir is the shared companion data directory used for cached org logos.
 	orgLogoDir    = "/data/org-logos"
 	orgCacheTTL   = 7 * 24 * time.Hour // re-fetch org info after 1 week
 	orgFetchAgent = "SCID-Companion/1.0 (Star Citizen Identity Provider; unofficial fansite tool)"

@@ -25,7 +25,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	st, err := store.New(cfg.DatabasePath)
+	st, err := store.New(cfg.DatabaseSource())
 	if err != nil {
 		slog.Error("database init failed", "err", err)
 		os.Exit(1)

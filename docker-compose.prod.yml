@@ -1,0 +1,129 @@
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — companion database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: scid
+      POSTGRES_USER: scid
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scid -d scid"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Pocket ID — the OIDC provider
+  # ---------------------------------------------------------------------------
+  pocket-id:
+    image: ghcr.io/pocket-id/pocket-id:latest
+    restart: unless-stopped
+    environment:
+      APP_URL: https://id.scid.my
+      TRUST_PROXY: "true"
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY}
+      # Pocket ID can be switched to PostgreSQL if desired.
+      # DB_PROVIDER: postgres
+      # DB_CONNECTION_STRING: postgres://pocket-id:${POSTGRES_PASSWORD}@postgres:5432/pocket-id
+    volumes:
+      - pocket-id-data:/app/data
+    networks:
+      - internal
+
+  # ---------------------------------------------------------------------------
+  # SCID Companion Service — RSI verification + helper API
+  # ---------------------------------------------------------------------------
+  companion:
+    build:
+      context: ./companion
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      LISTEN_ADDR: ":8080"
+      DATABASE_URL: postgres://scid:${POSTGRES_PASSWORD}@postgres:5432/scid?sslmode=disable
+      POCKET_ID_INTERNAL_URL: http://pocket-id:1411
+      POCKET_ID_ADMIN_API_KEY: ${POCKET_ID_ADMIN_API_KEY}
+      SCID_SECRET_KEY: ${SCID_SECRET_KEY}
+      PUBLIC_OIDC_CLIENT_ID: ${PUBLIC_OIDC_CLIENT_ID}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+    volumes:
+      - companion-data:/data
+    networks:
+      - internal
+    depends_on:
+      - postgres
+      - pocket-id
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Frontend — static SvelteKit build served via Vite preview
+  # ---------------------------------------------------------------------------
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install -g pnpm && pnpm install && pnpm build && pnpm preview --host 0.0.0.0 --port 5173"
+    environment:
+      VITE_API_BASE: http://companion:8080
+      PUBLIC_POCKET_ID_URL: https://id.scid.my
+      PUBLIC_OIDC_CLIENT_ID: ${PUBLIC_OIDC_CLIENT_ID}
+      PUBLIC_TURNSTILE_SITE_KEY: ${PUBLIC_TURNSTILE_SITE_KEY:-}
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+    networks:
+      - internal
+    depends_on:
+      - companion
+
+  # ---------------------------------------------------------------------------
+  # Caddy — reverse proxy with static mkcert TLS (production/local parity)
+  # ---------------------------------------------------------------------------
+  caddy:
+    build:
+      context: ./caddy
+      dockerfile_inline: |
+        FROM caddy:2-builder AS builder
+        RUN xcaddy build --with github.com/caddyserver/replace-response --with github.com/caddy-dns/cloudflare
+        FROM caddy:2-alpine
+        COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/certs:/certs:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - internal
+    depends_on:
+      - pocket-id
+      - companion
+      - frontend
+
+volumes:
+  postgres-data:
+  pocket-id-data:
+  companion-data:
+  caddy-data:
+  caddy-config:
+  frontend-node-modules:
+
+networks:
+  internal:
+    driver: bridge

@@ -2,7 +2,7 @@ FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
-# Install build dependencies for CGo-free SQLite (modernc.org/sqlite uses pure Go)
+# Install build dependencies for the companion build
 RUN apk add --no-cache ca-certificates
 
 COPY go.mod go.sum ./
@@ -23,7 +23,7 @@ WORKDIR /app
 
 COPY --from=builder /scid /app/scid
 
-# Data volume for SQLite database
+# Data volume for companion runtime data and cached logos
 VOLUME ["/data"]
 RUN mkdir -p /data && chown scid:scid /data
 
