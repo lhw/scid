@@ -27,6 +27,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/example/scid
+  DOCKER_API_VERSION: "1.41"
 
 jobs:
   # ---------------------------------------------------------------------------
