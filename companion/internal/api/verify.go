@@ -51,6 +51,7 @@ type startResponse struct {
 }
 
 func (s *Server) handleVerifyStart(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 4*1024)
 	user := userFromContext(r.Context())
 
 	var req startRequest
@@ -83,8 +84,14 @@ func (s *Server) handleVerifyStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
+	id, err := newID()
+	if err != nil {
+		slog.ErrorContext(r.Context(), "id generation failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
 	vt := &store.VerificationToken{
-		ID:             newID(),
+		ID:             id,
 		PocketIDUserID: user.ID,
 		RSIHandle:      req.Handle,
 		Token:          token,
@@ -519,10 +526,10 @@ func generateToken() (string, error) {
 }
 
 // newID generates a random hex ID for a DB row.
-func newID() string {
+func newID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand unavailable: " + err.Error())
+		return "", fmt.Errorf("crypto/rand: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }

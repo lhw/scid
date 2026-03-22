@@ -28,6 +28,7 @@ type signupTokenResponse struct {
 //
 // POST /api/auth/signup-token  (public — no auth required)
 func (s *Server) handleSignupToken(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 4*1024)
 	var req signupTokenRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")

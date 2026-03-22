@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -26,8 +27,10 @@ type Config struct {
 	// OIDCClientID is the frontend client ID used in the Pocket ID auth flow.
 	OIDCClientID string
 
-	// SessionSecretKey signs companion-managed session cookies.
-	SessionSecretKey string
+	// CORSAllowedOrigins is the list of allowed CORS origins for the companion API.
+	// Configured via CORS_ALLOWED_ORIGINS (comma-separated). Defaults to production
+	// origin plus localhost for dev convenience.
+	CORSAllowedOrigins []string
 
 	// SessionTTL is the maximum lifetime of a companion-managed login session.
 	SessionTTL time.Duration
@@ -55,10 +58,15 @@ func Load() (*Config, error) {
 		OIDCIssuerURL:       getEnv("POCKET_ID_ISSUER_URL", getEnv("PUBLIC_POCKET_ID_URL", getEnv("POCKET_ID_INTERNAL_URL", "http://pocket-id:3000"))),
 		PocketIDAdminAPIKey: os.Getenv("POCKET_ID_ADMIN_API_KEY"),
 		OIDCClientID:        getEnv("PUBLIC_OIDC_CLIENT_ID", "scid-frontend"),
-		SessionSecretKey:    os.Getenv("SCID_SECRET_KEY"),
 		SessionCookieSecure: getEnv("SCID_COOKIE_SECURE", "true") != "false",
 		RequireAppApproval:  getEnv("APP_REQUIRE_APPROVAL", "true") != "false",
 		TurnstileSecretKey:  os.Getenv("TURNSTILE_SECRET_KEY"),
+	}
+
+	for _, o := range strings.Split(getEnv("CORS_ALLOWED_ORIGINS", "https://scid.my,http://localhost:5173"), ",") {
+		if s := strings.TrimSpace(o); s != "" {
+			cfg.CORSAllowedOrigins = append(cfg.CORSAllowedOrigins, s)
+		}
 	}
 
 	sessionTTL, err := time.ParseDuration(getEnv("SCID_SESSION_TTL", "12h"))
@@ -69,9 +77,6 @@ func Load() (*Config, error) {
 
 	if cfg.PocketIDAdminAPIKey == "" {
 		return nil, fmt.Errorf("POCKET_ID_ADMIN_API_KEY environment variable is required")
-	}
-	if cfg.SessionSecretKey == "" {
-		return nil, fmt.Errorf("SCID_SECRET_KEY environment variable is required")
 	}
 
 	return cfg, nil

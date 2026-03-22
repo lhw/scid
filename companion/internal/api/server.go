@@ -73,9 +73,9 @@ func (s *Server) buildRouter() *chi.Mux {
 	r.Use(s.sessions.LoadAndSave)
 	r.Use(prometheusMiddleware)
 
-	// CORS — allow the frontend origin and localhost dev server.
+	// CORS — origins are configured via CORS_ALLOWED_ORIGINS (see config).
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"https://scid.my", "http://localhost:5173"},
+		AllowedOrigins:   s.cfg.CORSAllowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: false,
@@ -112,10 +112,13 @@ func (s *Server) buildRouter() *chi.Mux {
 		r.Delete("/api/apps/{id}", s.handleDeleteApp)
 		r.Post("/api/apps/{id}/secret", s.handleRotateSecret)
 		r.Put("/api/apps/{id}/logo", s.handleUploadLogo)
-		// Admin endpoints — require "admin" Pocket ID group (enforced in handler).
-		r.Get("/api/admin/apps", s.handleListAdminApps)
-		r.Post("/api/admin/apps/{id}/approve", s.handleApproveApp)
-		r.Post("/api/admin/apps/{id}/reject", s.handleRejectApp)
+		// Admin endpoints — access enforced by requireAdmin middleware.
+		r.Route("/api/admin", func(r chi.Router) {
+			r.Use(s.requireAdmin)
+			r.Get("/apps", s.handleListAdminApps)
+			r.Post("/apps/{id}/approve", s.handleApproveApp)
+			r.Post("/apps/{id}/reject", s.handleRejectApp)
+		})
 	})
 
 	return r
@@ -160,6 +163,25 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, code, map[string]any{
 		"status": overall,
 		"deps":   deps,
+	})
+}
+
+// requireAdmin is a middleware that verifies the authenticated user is a member
+// of the "admin" Pocket ID group. Must be used inside bearerAuthMiddleware.
+func (s *Server) requireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := userFromContext(r.Context())
+		ok, err := s.isUserInGroup(r, user.ID, "admin")
+		if err != nil {
+			slog.ErrorContext(r.Context(), "admin check failed", "user_id", user.ID, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		if !ok {
+			writeError(w, http.StatusForbidden, "admin access required")
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

@@ -42,15 +42,12 @@
   let editErrors = $state<Record<string, string>>({});
 
   onMount(async () => {
-    // Check for secret in URL params (passed after create)
-    const urlSecret = $page.url.searchParams.get('secret');
-    if (urlSecret) {
-      shownSecret = urlSecret;
-      // Remove secret from URL without navigation
-      const url = new URL($page.url);
-      url.searchParams.delete('secret');
-      url.searchParams.delete('new');
-      history.replaceState({}, '', url);
+    // Check for secret in history state (passed via goto state after create).
+    const stateSecret = ($page.state as { secret?: string })?.secret ?? '';
+    if (stateSecret) {
+      shownSecret = stateSecret;
+      // Clear the navigation state so it doesn't persist across refreshes.
+      history.replaceState({}, '', $page.url);
     }
 
     try {

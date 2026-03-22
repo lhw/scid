@@ -516,7 +516,6 @@ func newTestEnv(t *testing.T, requireApproval bool) *testEnv {
 		PocketIDAdminAPIKey: "test-admin-key",
 		OIDCIssuerURL:       pidSrv.URL,
 		OIDCClientID:        "scid-frontend",
-		SessionSecretKey:    "test-session-secret-key-32bytes!",
 		SessionTTL:          24 * 60 * 60 * 1e9, // 24h
 		SessionCookieSecure: false,
 		RequireAppApproval:  requireApproval,

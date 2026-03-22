@@ -52,6 +52,7 @@ func sessionDeadline(now time.Time, sessionTTL time.Duration, tokenExpiry time.T
 }
 
 func (s *Server) handleAuthCallback(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 4*1024)
 	var req authCallbackRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")

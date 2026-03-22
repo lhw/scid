@@ -101,8 +101,8 @@
       apps = [...apps, created];
       toast.success('Application registered!');
       if (created.client_secret) {
-        // Navigate to detail page so we can show the secret once.
-        goto(`/apps/${created.id}?new=1&secret=${encodeURIComponent(created.client_secret)}`);
+        // Navigate to detail page, passing the secret via history state (never in URL).
+        goto(`/apps/${created.id}`, { state: { secret: created.client_secret } });
       } else {
         resetForm();
         showForm = false;

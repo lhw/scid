@@ -22,6 +22,9 @@ const (
 	orgFetchAgent = "SCID-Companion/1.0 (Star Citizen Identity Provider; unofficial fansite tool)"
 )
 
+// orgHTTPClient is a dedicated client for fetching org logo images.
+var orgHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 // syncUserOrgs scrapes the user's RSI orgs page, caches org metadata and logos,
 // and stores the user's org memberships in the DB. It is designed to be called
 // non-fatally: errors are logged but do not fail the parent operation.
@@ -163,7 +166,7 @@ func cacheOrgLogo(ctx context.Context, sid, logoURL string) string {
 	}
 	req.Header.Set("User-Agent", orgFetchAgent)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := orgHTTPClient.Do(req)
 	if err != nil {
 		slog.WarnContext(ctx, "cache org logo: fetch", "sid", sid, "err", err)
 		return ""

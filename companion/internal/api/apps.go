@@ -204,14 +204,14 @@ func oidcClientParamsFromClient(client *pocketid.OIDCClient) pocketid.OIDCClient
 	}
 }
 
-// isUserVerified checks whether the user is in the "verified" Pocket ID group.
-func (s *Server) isUserVerified(r *http.Request, userID string) (bool, error) {
+// isUserInGroup checks whether the user is a member of the named Pocket ID group.
+func (s *Server) isUserInGroup(r *http.Request, userID, groupName string) (bool, error) {
 	groups, err := s.pid.GetUserGroups(r.Context(), userID)
 	if err != nil {
 		return false, err
 	}
 	for _, g := range groups {
-		if g.Name == "verified" {
+		if g.Name == groupName {
 			return true, nil
 		}
 	}
@@ -233,20 +233,6 @@ func (s *Server) ownerRegOrNil(r *http.Request, clientID, userID string) (*store
 		return nil, nil
 	}
 	return reg, nil
-}
-
-// isUserAdmin checks whether the user is in the "admin" Pocket ID group.
-func (s *Server) isUserAdmin(r *http.Request, userID string) (bool, error) {
-	groups, err := s.pid.GetUserGroups(r.Context(), userID)
-	if err != nil {
-		return false, err
-	}
-	for _, g := range groups {
-		if g.Name == "admin" {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 // setPendingGroups restricts a new OIDC client to the scid:pending sentinel group
@@ -330,9 +316,10 @@ func detectLogoContentType(imageData []byte) (string, bool) {
 // --- POST /api/apps ---
 
 func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
 	user := userFromContext(r.Context())
 
-	verified, err := s.isUserVerified(r, user.ID)
+	verified, err := s.isUserInGroup(r, user.ID, "verified")
 	if err != nil {
 		slog.ErrorContext(r.Context(), "check verified failed", "user_id", user.ID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -397,8 +384,15 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	regID, err := newID()
+	if err != nil {
+		slog.ErrorContext(r.Context(), "id generation failed", "err", err)
+		_ = s.pid.DeleteOIDCClient(r.Context(), client.ID)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
 	reg := &store.AppRegistration{
-		ID:           newID(),
+		ID:           regID,
 		OIDCClientID: client.ID,
 		OwnerUserID:  user.ID,
 		VerifiedOnly: req.VerifiedOnly,
@@ -689,22 +683,12 @@ func (s *Server) handleUploadLogo(w http.ResponseWriter, r *http.Request) {
 // --- GET /api/admin/apps ---
 
 func (s *Server) handleListAdminApps(w http.ResponseWriter, r *http.Request) {
-	user := userFromContext(r.Context())
-
-	ok, err := s.isUserAdmin(r, user.ID)
-	if err != nil {
-		slog.ErrorContext(r.Context(), "admin check failed", "user_id", user.ID, "err", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if !ok {
-		writeError(w, http.StatusForbidden, "admin access required")
-		return
-	}
-
 	statusFilter := r.URL.Query().Get("status") // "", "pending", "approved", "rejected"
 
-	var regs []store.AppRegistration
+	var (
+		regs []store.AppRegistration
+		err  error
+	)
 	if statusFilter == "pending" {
 		regs, err = s.store.ListPendingAppRegistrations(r.Context())
 	} else {
@@ -738,19 +722,7 @@ func (s *Server) handleListAdminApps(w http.ResponseWriter, r *http.Request) {
 // --- POST /api/admin/apps/{id}/approve ---
 
 func (s *Server) handleApproveApp(w http.ResponseWriter, r *http.Request) {
-	user := userFromContext(r.Context())
 	clientID := chi.URLParam(r, "id")
-
-	ok, err := s.isUserAdmin(r, user.ID)
-	if err != nil {
-		slog.ErrorContext(r.Context(), "admin check failed", "user_id", user.ID, "err", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if !ok {
-		writeError(w, http.StatusForbidden, "admin access required")
-		return
-	}
 
 	reg, err := s.store.GetAppRegistrationByClientID(r.Context(), clientID)
 	if err == store.ErrNotFound {
@@ -802,19 +774,7 @@ type rejectRequest struct {
 }
 
 func (s *Server) handleRejectApp(w http.ResponseWriter, r *http.Request) {
-	user := userFromContext(r.Context())
 	clientID := chi.URLParam(r, "id")
-
-	ok, err := s.isUserAdmin(r, user.ID)
-	if err != nil {
-		slog.ErrorContext(r.Context(), "admin check failed", "user_id", user.ID, "err", err)
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if !ok {
-		writeError(w, http.StatusForbidden, "admin access required")
-		return
-	}
 
 	reg, err := s.store.GetAppRegistrationByClientID(r.Context(), clientID)
 	if err == store.ErrNotFound {

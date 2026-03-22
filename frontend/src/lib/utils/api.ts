@@ -33,6 +33,15 @@ export interface ConfirmVerifyResponse {
   message?: string;
 }
 
+// throwIfError reads the error body and throws if the response is not OK.
+// Only consumes the response body on error, leaving it intact for successful responses.
+async function throwIfError(res: Response): Promise<void> {
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: "Unknown error" })) as { error?: string };
+    throw new Error(body.error ?? `Status ${res.status}`);
+  }
+}
+
 // Request a one-use Pocket ID signup token so the frontend can redirect a new
 // user to Pocket ID's /signup page. Pass the Cloudflare Turnstile challenge
 // response token when captcha validation is enabled on the backend.
@@ -42,10 +51,7 @@ export async function getSignupToken(turnstileToken?: string): Promise<string> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ turnstile_token: turnstileToken ?? "" }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   const body = await res.json() as { token: string };
   return body.token;
 }
@@ -66,10 +72,7 @@ export async function startVerify(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ handle }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   return res.json();
 }
 
@@ -78,10 +81,7 @@ export async function confirmVerify(): Promise<ConfirmVerifyResponse> {
   const res = await fetch("/api/verify/confirm", {
     method: "POST",
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   return res.json();
 }
 
@@ -91,10 +91,7 @@ export async function refreshVerify(): Promise<VerifyStatus> {
   const res = await fetch("/api/verify/refresh", {
     method: "POST",
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   return res.json();
 }
 
@@ -103,10 +100,7 @@ export async function deleteAccount(): Promise<void> {
   const res = await fetch("/api/account/delete", {
     method: "POST",
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
 }
 
 // ---- OIDC Application Registration ----
@@ -150,19 +144,13 @@ export interface DirectoryApp {
 
 export async function listApps(): Promise<AppRegistration[]> {
   const res = await fetch("/api/apps");
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   return res.json();
 }
 
 export async function listPublicApps(): Promise<DirectoryApp[]> {
   const res = await fetch("/api/apps/directory");
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   return res.json();
 }
 
@@ -172,19 +160,13 @@ export async function createApp(req: CreateAppRequest): Promise<AppRegistration>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   return res.json();
 }
 
 export async function getApp(id: string): Promise<AppRegistration> {
   const res = await fetch(`/api/apps/${encodeURIComponent(id)}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   return res.json();
 }
 
@@ -194,10 +176,7 @@ export async function updateApp(id: string, req: Partial<CreateAppRequest>): Pro
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   return res.json();
 }
 
@@ -205,20 +184,14 @@ export async function deleteApp(id: string): Promise<void> {
   const res = await fetch(`/api/apps/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
 }
 
 export async function rotateSecret(id: string): Promise<{ client_secret: string }> {
   const res = await fetch(`/api/apps/${encodeURIComponent(id)}/secret`, {
     method: "POST",
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   return res.json();
 }
 
@@ -229,10 +202,7 @@ export async function uploadAppLogo(id: string, file: File): Promise<void> {
     method: "PUT",
     body: form,
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
 }
 
 // ---- Admin API ----
@@ -240,10 +210,7 @@ export async function uploadAppLogo(id: string, file: File): Promise<void> {
 export async function adminListApps(status?: string): Promise<AppRegistration[]> {
   const url = status ? `/api/admin/apps?status=${encodeURIComponent(status)}` : "/api/admin/apps";
   const res = await fetch(url);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   return res.json();
 }
 
@@ -251,10 +218,7 @@ export async function adminApproveApp(id: string): Promise<AppRegistration> {
   const res = await fetch(`/api/admin/apps/${encodeURIComponent(id)}/approve`, {
     method: "POST",
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   return res.json();
 }
 
@@ -264,10 +228,7 @@ export async function adminRejectApp(id: string, reason?: string): Promise<AppRe
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reason: reason ?? "" }),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error ?? `Status ${res.status}`);
-  }
+  await throwIfError(res);
   return res.json();
 }
 

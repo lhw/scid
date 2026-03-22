@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -586,7 +587,7 @@ func (s *Store) GetOrgSync(ctx context.Context, userID string) (OrgSyncEntry, er
 	var e OrgSyncEntry
 	var syncedAt string
 	if err := row.Scan(&e.PocketIDUserID, &e.Handle, &syncedAt); err != nil {
-		if err.Error() == "sql: no rows in result set" {
+		if errors.Is(err, sql.ErrNoRows) {
 			return OrgSyncEntry{}, ErrNotFound
 		}
 		return OrgSyncEntry{}, fmt.Errorf("get org sync: %w", err)
