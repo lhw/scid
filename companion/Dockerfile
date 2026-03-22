@@ -1,16 +1,56 @@
-FROM golang:1.23-alpine AS builder
+# =============================================================================
+# Multi-stage build — SvelteKit frontend + Go companion in one image
+# Build context: repository root  (docker build -f companion/Dockerfile .)
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1: Build SvelteKit frontend
+# PUBLIC_* vars are baked into the JS bundle here; they are NOT runtime secrets.
+# Pass them as --build-arg in CI or locally.
+# ---------------------------------------------------------------------------
+FROM node:22-alpine AS frontend-builder
+
+RUN npm install -g pnpm
+
+WORKDIR /frontend
+
+# Install deps first so this layer is cached independently of source changes.
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+
+ARG PUBLIC_POCKET_ID_URL=https://id.scid.my
+ARG PUBLIC_OIDC_CLIENT_ID=scid-frontend
+ARG PUBLIC_TURNSTILE_SITE_KEY=""
+
+ENV PUBLIC_POCKET_ID_URL=${PUBLIC_POCKET_ID_URL} \
+    PUBLIC_OIDC_CLIENT_ID=${PUBLIC_OIDC_CLIENT_ID} \
+    PUBLIC_TURNSTILE_SITE_KEY=${PUBLIC_TURNSTILE_SITE_KEY}
+
+COPY frontend/ ./
+RUN pnpm build
+
+# ---------------------------------------------------------------------------
+# Stage 2: Build Go binary
+# The frontend output is copied into the //go:embed path before go build runs.
+# ---------------------------------------------------------------------------
+FROM golang:1.23-alpine AS go-builder
 
 WORKDIR /app
 
-# Install build dependencies for the companion build
 RUN apk add --no-cache ca-certificates
 
-COPY go.mod go.sum ./
+COPY companion/go.mod companion/go.sum ./
 RUN go mod download
 
-COPY . .
+COPY companion/ ./
+
+# Overlay the real frontend build into the embed directory so //go:embed picks it up.
+COPY --from=frontend-builder /frontend/build ./internal/frontend/dist/
+
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /scid ./cmd/scid
 
+# ---------------------------------------------------------------------------
+# Stage 3: Minimal runtime image
 # ---------------------------------------------------------------------------
 FROM alpine:3.20 AS runner
 
@@ -21,7 +61,7 @@ RUN addgroup -S scid && adduser -S scid -G scid
 
 WORKDIR /app
 
-COPY --from=builder /scid /app/scid
+COPY --from=go-builder /scid /app/scid
 
 # Data volume for companion runtime data and cached logos
 VOLUME ["/data"]

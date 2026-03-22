@@ -43,9 +43,7 @@ services:
   # SCID Companion Service — RSI verification + helper API
   # ---------------------------------------------------------------------------
   companion:
-    build:
-      context: ./companion
-      dockerfile: Dockerfile
+    image: ghcr.io/example/scid/companion:latest
     restart: unless-stopped
     environment:
       LISTEN_ADDR: ":8080"
@@ -70,43 +68,16 @@ services:
       start_period: 15s
 
   # ---------------------------------------------------------------------------
-  # Frontend — static SvelteKit build served via Vite preview
-  # ---------------------------------------------------------------------------
-  frontend:
-    image: node:22-alpine
-    working_dir: /app
-    command: sh -c "npm install -g pnpm && pnpm install && pnpm build && pnpm preview --host 0.0.0.0 --port 5173"
-    environment:
-      VITE_API_BASE: http://companion:8080
-      PUBLIC_POCKET_ID_URL: https://id.scid.my
-      PUBLIC_OIDC_CLIENT_ID: ${PUBLIC_OIDC_CLIENT_ID}
-      PUBLIC_TURNSTILE_SITE_KEY: ${PUBLIC_TURNSTILE_SITE_KEY:-}
-    volumes:
-      - ./frontend:/app
-      - frontend-node-modules:/app/node_modules
-    networks:
-      - internal
-    depends_on:
-      - companion
-
-  # ---------------------------------------------------------------------------
-  # Caddy — reverse proxy with static mkcert TLS (production/local parity)
+  # Caddy — reverse proxy with automatic Let's Encrypt TLS
   # ---------------------------------------------------------------------------
   caddy:
-    build:
-      context: ./caddy
-      dockerfile_inline: |
-        FROM caddy:2-builder AS builder
-        RUN xcaddy build --with github.com/caddyserver/replace-response --with github.com/caddy-dns/cloudflare
-        FROM caddy:2-alpine
-        COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+    image: ghcr.io/example/scid/caddy:latest
     restart: unless-stopped
     ports:
       - "0.0.0.0:80:80"
       - "0.0.0.0:443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./caddy/certs:/certs:ro
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     networks:
@@ -114,7 +85,13 @@ services:
     depends_on:
       - pocket-id
       - companion
-      - frontend
+    healthcheck:
+      # Caddy's admin API is available on localhost:2019 by default
+      test: ["CMD", "wget", "-qO/dev/null", "http://localhost:2019/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   postgres-data:
@@ -122,7 +99,6 @@ volumes:
   companion-data:
   caddy-data:
   caddy-config:
-  frontend-node-modules:
 
 networks:
   internal:

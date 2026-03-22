@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/alexedwards/scs/postgresstore"
@@ -16,6 +18,7 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/lhw/scid/companion/internal/config"
+	"github.com/lhw/scid/companion/internal/frontend"
 	"github.com/lhw/scid/companion/internal/oidcclient"
 	"github.com/lhw/scid/companion/internal/pocketid"
 	"github.com/lhw/scid/companion/internal/rsi"
@@ -126,7 +129,35 @@ func (s *Server) buildRouter() *chi.Mux {
 		})
 	})
 
+	// Serve the embedded SvelteKit frontend for every path that isn't an API route.
+	subFS, _ := fs.Sub(frontend.FS, "dist")
+	r.Handle("/*", spaHandler(subFS))
+
 	return r
+}
+
+// spaHandler serves static files from fsys with SPA fallback to index.html.
+// SvelteKit's /_app/ assets are served with immutable cache headers because
+// their filenames are content-hashed by the build tool.
+func spaHandler(fsys fs.FS) http.Handler {
+	fileServer := http.FileServer(http.FS(fsys))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Aggressively cache SvelteKit's hashed asset bundles.
+		if strings.HasPrefix(r.URL.Path, "/_app/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		// Fall back to index.html for any path that isn't a real file,
+		// so that SvelteKit's client-side router handles the navigation.
+		path := strings.TrimPrefix(r.URL.Path, "/")
+		if path == "" {
+			path = "."
+		}
+		if _, err := fsys.Open(path); err != nil {
+			r = r.Clone(r.Context())
+			r.URL.Path = "/"
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 }
 
 // handleHealth returns a structured liveness/readiness check.
