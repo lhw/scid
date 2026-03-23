@@ -2,8 +2,8 @@
   // Contact details are split across variables to reduce indexing by bots.
   // Displayed inline via CSS so it reads naturally for humans.
   const nameParts = ['L.', '\u00a0', 'W\u200beller'];
-  const emailUser = 'scid';
-  const emailDomain = 'weller' + '\u2024' + 'dev';
+  const emailUser = 'admin';
+  const emailDomain = 'scid' + '\u2024' + 'my';
 </script>
 
 <div class="mx-auto w-full max-w-2xl px-6 py-16">
