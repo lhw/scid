@@ -23,7 +23,7 @@ RUN pnpm build
 # Stage 2: Build Go binary
 # The frontend output is copied into the //go:embed path before go build runs.
 # ---------------------------------------------------------------------------
-FROM golang:1.23-alpine AS go-builder
+FROM golang:1.25-alpine AS go-builder
 
 WORKDIR /app
 
