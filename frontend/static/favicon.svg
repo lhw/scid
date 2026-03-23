@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <rect width="32" height="32" rx="6" fill="#0d1526"/>
+  <!-- Diamond / ID crystal shape -->
+  <polygon points="16,4 26,12 22,28 10,28 6,12" fill="none" stroke="#00d4ff" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- Inner highlight -->
+  <polygon points="16,8 23,13 20,26 12,26 9,13" fill="#00d4ff" fill-opacity="0.08"/>
+  <!-- S letter -->
+  <text x="16" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#00d4ff">S</text>
+</svg>
