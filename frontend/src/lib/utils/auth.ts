@@ -82,12 +82,15 @@ export async function handleCallback(code: string, state: string): Promise<strin
   sessionStorage.removeItem(STATE_KEY);
   sessionStorage.removeItem(VERIFIER_KEY);
 
+  const redirectUri = `${window.location.origin}/callback`;
+
   const res = await fetch('/api/auth/callback', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       code,
       code_verifier: verifier,
+      redirect_uri: redirectUri,
     }),
   });
 
