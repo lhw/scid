@@ -1,18 +1,25 @@
 # =============================================================================
-# Caddyfile — SCID reverse proxy  (production)
+# Caddyfile — SCID reverse proxy  (local dev)
 # =============================================================================
 # Domains: id.scid.my  →  Pocket ID
 #          scid.my     →  SCID companion + SvelteKit frontend
 #
-# TLS is handled automatically via Let's Encrypt (ACME HTTP-01 challenge).
-# Ports 80 and 443 must be reachable from the internet.
-# Certificate state is persisted in the caddy-data Docker volume.
+# TLS is handled with locally-trusted mkcert certificates (wildcard *.scid.my).
+# Caddy's automatic HTTPS / ACME is disabled for these blocks; the cert files
+# are mounted into the container at /certs/.
 # =============================================================================
+
+{
+    # Disable the global ACME HTTP challenge listener — we're using static certs
+    auto_https off
+}
 
 # Pocket ID — the main OIDC provider (login, passkeys, consent)
 # We inject a <style> block into every HTML response to hide the first name,
 # last name, and display name fields — Pocket ID has no native toggle for this.
 id.scid.my {
+    tls /certs/scid.my+1.pem /certs/scid.my+1-key.pem
+
     # Inject styles and a fixed "Return to SCID" back-button into every HTML page.
     # Fields hidden: first name, last name, display name (Pocket ID has no toggle for these).
     replace {
@@ -35,7 +42,17 @@ id.scid.my {
     }
 }
 
-# SCID — companion API + SvelteKit frontend (both served by the companion binary)
+# SCID — companion API + SvelteKit frontend
 scid.my {
-    reverse_proxy companion:8080
+    tls /certs/scid.my+1.pem /certs/scid.my+1-key.pem
+
+    # Companion REST API
+    handle /api/* {
+        reverse_proxy companion:8080
+    }
+
+    # SvelteKit frontend (dev server)
+    handle {
+        reverse_proxy frontend:5173
+    }
 }
