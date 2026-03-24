@@ -60,7 +60,7 @@ func New(cfg *config.Config, st *store.Store) *Server {
 	s := &Server{
 		cfg:      cfg,
 		store:    st,
-		auth:     oidcclient.New(cfg.OIDCIssuerURL, cfg.OIDCClientID),
+		auth:     oidcclient.New(cfg.OIDCIssuerURL, cfg.OIDCClientID, cfg.OIDCClientSecret),
 		pid:      pocketid.New(cfg.PocketIDInternalURL, cfg.PocketIDAdminAPIKey),
 		scraper:  rsi.New(),
 		limiter:  newRateLimiter(),

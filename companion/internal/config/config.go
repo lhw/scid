@@ -33,6 +33,10 @@ type Config struct {
 	// OIDCClientID is the frontend client ID used in the Pocket ID auth flow.
 	OIDCClientID string
 
+	// OIDCClientSecret is the client secret for the confidential OIDC client.
+	// Leave empty only when using a public client (not recommended for server-side apps).
+	OIDCClientSecret string
+
 	// TurnstileSiteKey is the public Cloudflare Turnstile site key exposed to
 	// the frontend at runtime. It is safe to inject into HTML responses.
 	TurnstileSiteKey string
@@ -85,6 +89,7 @@ func Load() (*Config, error) {
 		OIDCIssuerURL:       getEnv("POCKET_ID_ISSUER_URL", getEnv("PUBLIC_POCKET_ID_URL", getEnv("POCKET_ID_INTERNAL_URL", "http://pocket-id:3000"))),
 		PocketIDAdminAPIKey: os.Getenv("POCKET_ID_ADMIN_API_KEY"),
 		OIDCClientID:        getEnv("PUBLIC_OIDC_CLIENT_ID", "scid-frontend"),
+		OIDCClientSecret:    os.Getenv("OIDC_CLIENT_SECRET"),
 		SessionCookieSecure: getEnv("SCID_COOKIE_SECURE", "true") != "false",
 		RequireAppApproval:  getEnv("APP_REQUIRE_APPROVAL", "true") != "false",
 		TurnstileSecretKey:  os.Getenv("TURNSTILE_SECRET_KEY"),

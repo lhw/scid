@@ -157,6 +157,7 @@
       <div>
         <h1 class="text-3xl font-bold text-[#00d4ff]">My Applications</h1>
         <p class="mt-1 text-sm text-[#e2e8f0]/50">OIDC clients registered via SCID ({apps.length}/5)</p>
+        <a href="/docs/integration" class="mt-1 text-xs text-[#00d4ff]/50 hover:text-[#00d4ff] transition-colors">Integration docs →</a>
       </div>
       {#if !showForm && apps.length < 5}
         <button

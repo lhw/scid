@@ -66,10 +66,30 @@
       </div>
       <h1 class="mb-2 text-2xl font-bold text-[#e2e8f0]">Create a SCID Account</h1>
       <p class="text-sm text-[#e2e8f0]/60">
-        You'll set up a passkey on the next step.<br />
-        Afterward, come back here to link your RSI handle.
+        SCID uses <strong class="text-[#e2e8f0]/80">Pocket ID</strong> for secure passkey authentication.
+        You'll be taken there to create your account, then returned here automatically to link your RSI handle.
       </p>
     </div>
+
+    <!-- Step flow -->
+    <ol class="mb-7 flex items-center gap-0">
+      {#each [
+        { label: 'Start here', active: true },
+        { label: 'Create account in Pocket ID', active: false },
+        { label: 'Return & verify RSI', active: false },
+      ] as step, i}
+        <li class="flex flex-1 flex-col items-center gap-1.5 text-center">
+          <span class="flex h-7 w-7 items-center justify-center rounded-full border text-xs font-bold
+            {step.active ? 'border-[#00d4ff] bg-[#00d4ff]/10 text-[#00d4ff]' : 'border-[#1e3a5f] bg-[#0d1526] text-[#e2e8f0]/30'}">
+            {i + 1}
+          </span>
+          <span class="text-[10px] leading-tight {step.active ? 'text-[#e2e8f0]/70' : 'text-[#e2e8f0]/30'}">{step.label}</span>
+        </li>
+        {#if i < 2}
+          <div class="mb-4 h-px w-6 flex-shrink-0 bg-[#1e3a5f]"></div>
+        {/if}
+      {/each}
+    </ol>
 
     <div class="rounded-xl border border-[#1e3a5f] bg-[#111827]/80 p-8 backdrop-blur-sm">
       {#if PUBLIC_TURNSTILE_SITE_KEY}
@@ -100,14 +120,19 @@
       >
         {#if loading}
           <LoaderCircle class="h-4 w-4 animate-spin" />
-          Opening registration…
+          Opening Pocket ID…
         {:else}
           <UserPlus class="h-4 w-4" />
-          Continue to registration →
+          Continue to Pocket ID →
         {/if}
       </button>
 
-      <p class="mt-5 text-center text-sm text-[#e2e8f0]/50">
+      <p class="mt-5 text-center text-xs text-[#e2e8f0]/40">
+        After completing your account in Pocket ID you'll be redirected back here automatically
+        to complete the RSI verification step.
+      </p>
+
+      <p class="mt-4 text-center text-sm text-[#e2e8f0]/50">
         Already have an account?
         <a href="/verify" class="text-[#00d4ff] hover:underline">
           <LogIn class="inline h-3.5 w-3.5 align-[-1px]" />

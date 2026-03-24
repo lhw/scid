@@ -14,8 +14,9 @@ import (
 
 // Client wraps a standard OIDC discovery provider and OAuth2 config.
 type Client struct {
-	issuerURL string
-	clientID  string
+	issuerURL    string
+	clientID     string
+	clientSecret string // empty for public clients
 
 	mu           sync.Mutex
 	provider     *oidc.Provider
@@ -23,8 +24,10 @@ type Client struct {
 }
 
 // New creates a lazily initialized OIDC client.
-func New(issuerURL, clientID string) *Client {
-	return &Client{issuerURL: issuerURL, clientID: clientID}
+// Pass a non-empty clientSecret to use a confidential client (recommended for
+// server-side applications that can safely store a secret).
+func New(issuerURL, clientID, clientSecret string) *Client {
+	return &Client{issuerURL: issuerURL, clientID: clientID, clientSecret: clientSecret}
 }
 
 func (c *Client) ensureProvider(ctx context.Context) (*oidc.Provider, *oauth2.Config, error) {
@@ -41,8 +44,9 @@ func (c *Client) ensureProvider(ctx context.Context) (*oidc.Provider, *oauth2.Co
 	}
 
 	config := &oauth2.Config{
-		ClientID: c.clientID,
-		Endpoint: provider.Endpoint(),
+		ClientID:     c.clientID,
+		ClientSecret: c.clientSecret,
+		Endpoint:     provider.Endpoint(),
 	}
 
 	c.provider = provider

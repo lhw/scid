@@ -279,78 +279,97 @@
       >
         SCID
       </h1>
-      <p class="mb-6 text-2xl font-light text-[#e2e8f0]/80">
+      <p class="mb-4 text-2xl font-light text-[#e2e8f0]/80">
         Your Star Citizen identity, any fan site
       </p>
       <p class="mx-auto mb-10 max-w-2xl text-base leading-relaxed text-[#e2e8f0]/60">
-        SCID verifies your RSI account by having you place a short token in your public profile bio —
-        no passwords shared, no third-party access granted. Once verified, fan sites can use
-        <span class="font-medium text-[#00d4ff]">Login with SCID</span> to recognise you as a real
-        citizen, automatically.
+        SCID is an unofficial identity provider for Star Citizen fan sites. Link your RSI account
+        once, then use <span class="font-medium text-[#00d4ff]">Login with SCID</span> on any
+        participating site — your verified RSI handle and org memberships follow you automatically.
       </p>
-      <a
-        href="/verify"
-        class="inline-flex items-center gap-2 rounded-lg border border-[#00d4ff] bg-[#00d4ff]/10 px-8 py-3 text-base font-semibold text-[#00d4ff] shadow-[0_0_24px_rgba(0,212,255,0.15)] transition-all hover:bg-[#00d4ff]/20 hover:shadow-[0_0_32px_rgba(0,212,255,0.25)]"
-      >
-        Create Your SCID
-        <span aria-hidden="true">→</span>
-      </a>
+      <div class="flex flex-wrap items-center justify-center gap-4">
+        <a
+          href="/register"
+          class="inline-flex items-center gap-2 rounded-lg bg-[#00d4ff] px-8 py-3 text-base font-semibold text-[#0a0e1a] shadow-[0_0_24px_rgba(0,212,255,0.2)] transition-all hover:bg-[#00b8dc] hover:shadow-[0_0_32px_rgba(0,212,255,0.3)]"
+        >
+          Create Your SCID
+          <span aria-hidden="true">→</span>
+        </a>
+        <a
+          href="/docs"
+          class="inline-flex items-center gap-2 rounded-lg border border-[#1e3a5f] px-8 py-3 text-base font-medium text-[#e2e8f0]/60 transition-colors hover:border-[#00d4ff]/40 hover:text-[#00d4ff]"
+        >
+          Developer Docs
+        </a>
+      </div>
     </section>
 
-    <section class="grid gap-6 sm:grid-cols-2">
-      <div
-        class="rounded-xl border border-[#1e3a5f] bg-[#0d1526] p-8 transition-colors hover:border-[#00d4ff]/30"
-      >
+    <!-- How it works strip -->
+    <section class="mb-16">
+      <h2 class="mb-8 text-center text-xs font-semibold uppercase tracking-widest text-[#e2e8f0]/30">How it works</h2>
+      <ol class="relative grid gap-px sm:grid-cols-4">
+        {#each [
+          { n: '1', title: 'Create an account', body: 'Register a SCID account secured with a passkey — no password required.' },
+          { n: '2', title: 'Verify your RSI handle', body: 'Paste a short token into your RSI bio. SCID reads your public profile and confirms ownership.' },
+          { n: '3', title: 'Log in to fan sites', body: 'Click "Login with SCID" on any participating site — no extra signup needed.' },
+          { n: '4', title: 'Your identity travels with you', body: 'Your verified handle, citizen record, and org memberships are shared as standard claims.' },
+        ] as step}
+          <li class="flex flex-col gap-3 rounded-xl border border-[#1e3a5f] bg-[#0d1526] p-6">
+            <span class="text-3xl font-extrabold text-[#00d4ff]/20">{step.n}</span>
+            <p class="text-sm font-semibold text-[#e2e8f0]/80">{step.title}</p>
+            <p class="text-xs leading-relaxed text-[#e2e8f0]/50">{step.body}</p>
+          </li>
+        {/each}
+      </ol>
+    </section>
+
+    <!-- Feature blocks -->
+    <section class="grid gap-6 sm:grid-cols-3">
+      <div class="rounded-xl border border-[#1e3a5f] bg-[#0d1526] p-8 transition-colors hover:border-[#00d4ff]/30">
         <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-[#00d4ff]/10">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-5 w-5 text-[#00d4ff]"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#00d4ff]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           </svg>
         </div>
         <h2 class="mb-3 text-lg font-semibold text-[#e2e8f0]">RSI Bio Verification</h2>
         <p class="text-sm leading-relaxed text-[#e2e8f0]/60">
-          SCID generates a unique token (e.g. <code class="rounded bg-[#1e3a5f] px-1 py-0.5 font-mono text-[#00d4ff]">scid:abc123</code>)
-          that you paste into your public RSI profile bio. SCID then fetches your profile, confirms the
-          token is present, and marks your handle as verified — all without ever touching your RSI
-          password or passkeys.
+          Prove you own your RSI account without sharing any credentials. SCID generates a unique token
+          (e.g. <code class="rounded bg-[#1e3a5f] px-1 py-0.5 font-mono text-[#00d4ff]">scid:abc123</code>)
+          that you paste into your public RSI bio. SCID fetches your profile, confirms the token,
+          and records your verified handle — no passwords or third-party access ever required.
         </p>
       </div>
 
-      <div
-        class="rounded-xl border border-[#1e3a5f] bg-[#0d1526] p-8 transition-colors hover:border-[#00d4ff]/30"
-      >
+      <div class="rounded-xl border border-[#1e3a5f] bg-[#0d1526] p-8 transition-colors hover:border-[#00d4ff]/30">
         <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-[#00d4ff]/10">
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            class="h-5 w-5 text-[#00d4ff]"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#00d4ff]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <circle cx="12" cy="12" r="10" />
             <line x1="2" y1="12" x2="22" y2="12" />
             <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
           </svg>
         </div>
-        <h2 class="mb-3 text-lg font-semibold text-[#e2e8f0]">One Login, Any Fan Site</h2>
+        <h2 class="mb-3 text-lg font-semibold text-[#e2e8f0]">One Login, Every Site</h2>
         <p class="text-sm leading-relaxed text-[#e2e8f0]/60">
-          SCID is a standard <span class="font-medium text-[#e2e8f0]/80">OpenID Connect (OIDC)</span>
-          provider. Any fan site — trade tools, org managers, fleet trackers — can integrate
-          "Login with SCID" using any OIDC client library. Your verified RSI handle and org
-          memberships are shared as standard claims, no custom integration required.
+          SCID is a standard <span class="font-medium text-[#e2e8f0]/80">OpenID Connect</span> provider.
+          Once you have a verified SCID account, any participating fan site — trade tools, org managers,
+          stat trackers — can authenticate you instantly. No repeated signups, no duplicate profiles.
+          Your RSI identity is recognised automatically.
+        </p>
+      </div>
+
+      <div class="rounded-xl border border-[#1e3a5f] bg-[#0d1526] p-8 transition-colors hover:border-[#00d4ff]/30">
+        <div class="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-[#00d4ff]/10">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-[#00d4ff]" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+        </div>
+        <h2 class="mb-3 text-lg font-semibold text-[#e2e8f0]">Built for Fan Site Developers</h2>
+        <p class="text-sm leading-relaxed text-[#e2e8f0]/60">
+          Integrate with any OIDC client library using the standard discovery URL. Receive your users'
+          verified RSI handle, citizen record, enlistment date, and org memberships as signed JWT claims
+          — no custom API or scraping required on your end.
+          <a href="/docs/integration" class="mt-2 block text-[#00d4ff]/70 hover:text-[#00d4ff]">Read the integration docs →</a>
         </p>
       </div>
     </section>
