@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [tailwindcss(), sveltekit()],
   server: {
     host: "0.0.0.0",
-    allowedHosts: ["scid.my", "id.scid.my", "frontend"],
+    allowedHosts: ["scid.my", "auth.scid.my", "dev.scid.my", "dev-auth.scid.my", "localhost", "127.0.0.1", "frontend"],
     proxy: {
       "/api": {
         target: process.env.VITE_API_BASE ?? "http://localhost:8080",

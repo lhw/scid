@@ -47,6 +47,8 @@ My SCID uses Pocket ID as the OIDC backend and a Go companion service to verify 
 
 See the repository docs, `docker-compose.yml`, and `docker-compose.prod.yml` for the current development and deployment layout.
 
+The local stack uses `https://dev-auth.scid.my` for Pocket ID and `https://dev.scid.my` for the companion/frontend app.
+
 ## Disclaimer
 
 This is an unofficial fan project and is not affiliated with Cloud Imperium Games.

@@ -55,13 +55,13 @@ The current implementation combines:
 ## Quick start (fan site operators)
 
 1. Log in to SCID with a verified account.
-2. Go to [My Apps](https://id.scid.my/apps) and register a new application.
+2. Go to [My Apps](https://auth.scid.my/apps) and register a new application.
 3. Fill in your application name, launch URL, redirect URIs, and any optional logout URIs.
 4. Choose whether the client is public, PKCE-only, verified-only, and whether it should be listed in the public directory.
 5. Submit for approval if the instance requires it, then use the issued Client ID and Client Secret with any OIDC library.
 
 ```
-Discovery URL: https://id.scid.my/.well-known/openid-configuration
+Discovery URL: https://auth.scid.my/.well-known/openid-configuration
 ```
 
 ## OIDC behavior

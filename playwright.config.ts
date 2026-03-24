@@ -8,7 +8,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: 'html',
   use: {
-    baseURL: 'https://scid.my',
+    baseURL: 'https://dev.scid.my',
     // mkcert certs are locally trusted — no need to ignore TLS errors
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',

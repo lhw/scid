@@ -5,7 +5,7 @@ type PublicEnv = {
 };
 
 const defaults: Required<PublicEnv> = {
-	PUBLIC_POCKET_ID_URL: 'https://id.scid.my',
+	PUBLIC_POCKET_ID_URL: 'https://auth.scid.my',
 	PUBLIC_OIDC_CLIENT_ID: 'scid-frontend',
 	PUBLIC_TURNSTILE_SITE_KEY: '',
 };

@@ -10,7 +10,7 @@ My SCID is a standard [OpenID Connect (OIDC)](https://openid.net/developers/how-
 ## Prerequisites
 
 - A verified SCID account (you need to link your RSI handle first)
-- A registered application in [My Apps](https://id.scid.my/apps)
+- A registered application in [My Apps](https://auth.scid.my/apps)
 
 ## Registering an application
 
@@ -33,7 +33,7 @@ New apps may require admin approval depending on the instance configuration.
 The auto-discovery document is available at:
 
 ```
-https://id.scid.my/.well-known/openid-configuration
+https://auth.scid.my/.well-known/openid-configuration
 ```
 
 All OIDC endpoints (authorization, token, userinfo, JWKS) are listed there. Most libraries accept a discovery URL and configure themselves automatically.
@@ -45,7 +45,7 @@ My SCID supports **Authorization Code Flow with PKCE** (recommended for all clie
 ### Step 1 — Redirect the user to My SCID
 
 ```
-GET https://id.scid.my/authorize
+GET https://auth.scid.my/authorize
   ?response_type=code
   &client_id=YOUR_CLIENT_ID
   &redirect_uri=https://yoursite.example/callback
@@ -58,7 +58,7 @@ GET https://id.scid.my/authorize
 ### Step 2 — Exchange the code for tokens
 
 ```
-POST https://id.scid.my/api/oidc/token
+POST https://auth.scid.my/api/oidc/token
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=authorization_code
@@ -81,7 +81,7 @@ Response:
 ### Step 3 — Fetch the userinfo
 
 ```
-GET https://id.scid.my/api/oidc/userinfo
+GET https://auth.scid.my/api/oidc/userinfo
 Authorization: Bearer ACCESS_TOKEN
 ```
 
@@ -111,7 +111,7 @@ from authlib.integrations.flask_client import OAuth
 oauth = OAuth(app)
 scid = oauth.register(
     name='scid',
-    server_metadata_url='https://id.scid.my/.well-known/openid-configuration',
+    server_metadata_url='https://auth.scid.my/.well-known/openid-configuration',
     client_id='YOUR_CLIENT_ID',
     client_secret='YOUR_CLIENT_SECRET',
     client_kwargs={'scope': 'openid profile email'},
@@ -123,7 +123,7 @@ scid = oauth.register(
 ```js
 import { Issuer } from 'openid-client';
 
-const scidIssuer = await Issuer.discover('https://id.scid.my');
+const scidIssuer = await Issuer.discover('https://auth.scid.my');
 const client = new scidIssuer.Client({
   client_id: 'YOUR_CLIENT_ID',
   client_secret: 'YOUR_CLIENT_SECRET',
