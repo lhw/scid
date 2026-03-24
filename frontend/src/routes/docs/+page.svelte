@@ -20,13 +20,6 @@
       OpenID Connect login backed by verified RSI account ownership. No RSI passwords are ever shared.
     </p>
 
-    <p class="text-[#e2e8f0]/70 leading-relaxed">
-      The implementation combines a <strong class="text-[#e2e8f0]/80">Pocket ID</strong> OIDC provider,
-      a <strong class="text-[#e2e8f0]/80">Go companion service</strong> for RSI verification, org syncing,
-      and app administration, and a <strong class="text-[#e2e8f0]/80">SvelteKit frontend</strong> for
-      users, app owners, and admins.
-    </p>
-
     <section>
       <h2 class="mb-4 text-xl font-semibold text-[#e2e8f0]">How it works</h2>
       <ol class="space-y-3">

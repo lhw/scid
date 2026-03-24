@@ -307,14 +307,14 @@
     <!-- How it works strip -->
     <section class="mb-16">
       <h2 class="mb-8 text-center text-xs font-semibold uppercase tracking-widest text-[#e2e8f0]/30">How it works</h2>
-      <ol class="relative grid gap-px sm:grid-cols-4">
+      <ol class="relative grid gap-4 sm:grid-cols-4">
         {#each [
           { n: '1', title: 'Create an account', body: 'Register a SCID account secured with a passkey — no password required.' },
           { n: '2', title: 'Verify your RSI handle', body: 'Paste a short token into your RSI bio. SCID reads your public profile and confirms ownership.' },
           { n: '3', title: 'Log in to fan sites', body: 'Click "Login with SCID" on any participating site — no extra signup needed.' },
           { n: '4', title: 'Your identity travels with you', body: 'Your verified handle, citizen record, and org memberships are shared as standard claims.' },
         ] as step}
-          <li class="flex flex-col gap-3 rounded-xl border border-[#1e3a5f] bg-[#0d1526] p-6">
+          <li class="flex flex-col gap-3 rounded-xl border border-[#1e3a5f] bg-[#0d1526] p-4">
             <span class="text-3xl font-extrabold text-[#00d4ff]/20">{step.n}</span>
             <p class="text-sm font-semibold text-[#e2e8f0]/80">{step.title}</p>
             <p class="text-xs leading-relaxed text-[#e2e8f0]/50">{step.body}</p>
@@ -333,10 +333,9 @@
         </div>
         <h2 class="mb-3 text-lg font-semibold text-[#e2e8f0]">RSI Bio Verification</h2>
         <p class="text-sm leading-relaxed text-[#e2e8f0]/60">
-          Prove you own your RSI account without sharing any credentials. SCID generates a unique token
-          (e.g. <code class="rounded bg-[#1e3a5f] px-1 py-0.5 font-mono text-[#00d4ff]">scid:abc123</code>)
-          that you paste into your public RSI bio. SCID fetches your profile, confirms the token,
-          and records your verified handle — no passwords or third-party access ever required.
+          SCID gives you a short, unique code — just paste it into your public RSI bio and hit Verify.
+          Once confirmed you can remove it. No passwords, no third-party access, nothing shared but
+          what's already public on your RSI profile.
         </p>
       </div>
 
