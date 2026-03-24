@@ -39,7 +39,7 @@
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.textBaseline = 'top';
-    ctx.fillStyle = '#1a2933';
+    ctx.fillStyle = '#e2e8f0';
     ctx.font = `${fontSize}px system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial`;
 
     for (let i = 0; i < lines.length; i++) {
@@ -47,11 +47,11 @@
       const jitter = Math.round((Math.random() - 0.5) * 6);
 
       if (i === 0) {
-        ctx.font = `bold ${Math.round(fontSize * 1)}px system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial`;
-        ctx.fillStyle = '#0f1419';
+        ctx.font = `bold ${Math.round(fontSize * 1.05)}px system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial`;
+        ctx.fillStyle = '#00d4ff';
       } else {
         ctx.font = `${fontSize}px system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial`;
-        ctx.fillStyle = '#1a2933';
+        ctx.fillStyle = '#e2e8f0';
       }
 
       ctx.fillText(lines[i], padding + jitter, y);
