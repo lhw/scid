@@ -19,6 +19,7 @@ import (
 
 	"github.com/lhw/scid/companion/internal/config"
 	"github.com/lhw/scid/companion/internal/frontend"
+	"github.com/lhw/scid/companion/internal/mailer"
 	"github.com/lhw/scid/companion/internal/oidcclient"
 	"github.com/lhw/scid/companion/internal/pocketid"
 	"github.com/lhw/scid/companion/internal/rsi"
@@ -34,6 +35,7 @@ type Server struct {
 	scraper  rsi.RSIScraper
 	limiter  *rateLimiter
 	sessions *scs.SessionManager
+	mailer   *mailer.Mailer
 	router   *chi.Mux
 }
 
@@ -61,6 +63,14 @@ func New(cfg *config.Config, st *store.Store) *Server {
 		scraper:  rsi.New(),
 		limiter:  newRateLimiter(),
 		sessions: sessionManager,
+		mailer: mailer.New(mailer.Config{
+			Host:       cfg.SMTPHost,
+			Port:       cfg.SMTPPort,
+			User:       cfg.SMTPUser,
+			Password:   cfg.SMTPPassword,
+			From:       cfg.SMTPFrom,
+			AdminEmail: cfg.SMTPAdminEmail,
+		}),
 	}
 	s.router = s.buildRouter()
 	return s

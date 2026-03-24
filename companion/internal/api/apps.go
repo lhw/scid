@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/lhw/scid/companion/internal/mailer"
 	"github.com/lhw/scid/companion/internal/pocketid"
 	"github.com/lhw/scid/companion/internal/store"
 )
@@ -407,6 +408,18 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		_ = s.pid.DeleteOIDCClient(r.Context(), client.ID)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
+	}
+
+	if status == "pending" {
+		s.mailer.SendNewAppNotification(mailer.NewAppNotification{
+			AppName:      client.Name,
+			AppID:        client.ID,
+			OwnerHandle:  user.Username,
+			RedirectURIs: req.RedirectURIs,
+			VerifiedOnly: req.VerifiedOnly,
+			Listed:       req.Listed,
+			CreatedAt:    reg.CreatedAt,
+		})
 	}
 
 	writeJSON(w, http.StatusCreated, buildAppResponse(client, reg, secret))

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -54,6 +55,16 @@ type Config struct {
 	// captcha responses server-side. If empty, captcha validation is skipped
 	// (useful for local development).
 	TurnstileSecretKey string
+
+	// SMTP settings for outbound notification emails.
+	// All fields are optional; when SMTPHost is empty, email sending is disabled.
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUser     string
+	SMTPPassword string
+	SMTPFrom     string
+	// SMTPAdminEmail is the recipient address for admin notifications.
+	SMTPAdminEmail string
 }
 
 // Load reads configuration from environment variables, applying defaults where
@@ -71,6 +82,12 @@ func Load() (*Config, error) {
 		RequireAppApproval:  getEnv("APP_REQUIRE_APPROVAL", "true") != "false",
 		TurnstileSecretKey:  os.Getenv("TURNSTILE_SECRET_KEY"),
 		TurnstileSiteKey:    getEnv("PUBLIC_TURNSTILE_SITE_KEY", ""),
+		SMTPHost:            os.Getenv("SMTP_HOST"),
+		SMTPPort:            smtpPort(getEnv("SMTP_PORT", "587")),
+		SMTPUser:            os.Getenv("SMTP_USER"),
+		SMTPPassword:        os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:            getEnv("SMTP_FROM", os.Getenv("SMTP_USER")),
+		SMTPAdminEmail:      os.Getenv("SMTP_ADMIN_EMAIL"),
 	}
 
 	for _, o := range strings.Split(getEnv("CORS_ALLOWED_ORIGINS", "https://scid.my,http://localhost:5173"), ",") {
@@ -106,4 +123,12 @@ func getEnv(key, defaultVal string) string {
 		return v
 	}
 	return defaultVal
+}
+
+func smtpPort(s string) int {
+	n, err := strconv.Atoi(s)
+	if err != nil || n <= 0 || n > 65535 {
+		return 587
+	}
+	return n
 }
