@@ -116,39 +116,38 @@
         {/if}
       </dl>
 
-      {#if status.next_sync_at}
-        <div class="mb-5 flex items-center gap-2 rounded-lg border border-[#1e3a5f] bg-[#0a0e1a]/60 px-4 py-2.5 text-xs text-[#e2e8f0]/50">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-[#00d4ff]/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-          </svg>
-          Next profile &amp; org sync:
-          <span class="ml-0.5 font-medium text-[#e2e8f0]/70">{relativeTime(status.next_sync_at)}</span>
-          <span class="ml-auto text-[#e2e8f0]/30">{new Date(status.next_sync_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-        </div>
-      {/if}
-
-      <button
-        onclick={handleRefresh}
-        disabled={refreshing}
-        class="flex items-center gap-2 rounded-lg border border-[#00d4ff]/40 bg-[#00d4ff]/5 px-5 py-2.5 text-sm font-medium text-[#00d4ff] transition-colors hover:bg-[#00d4ff]/10 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-4 w-4 {refreshing ? 'animate-spin' : ''}"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
+      <div class="flex items-center gap-4">
+        <button
+          onclick={handleRefresh}
+          disabled={refreshing}
+          class="flex items-center gap-2 rounded-lg border border-[#00d4ff]/40 bg-[#00d4ff]/5 px-5 py-2.5 text-sm font-medium text-[#00d4ff] transition-colors hover:bg-[#00d4ff]/10 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <polyline points="23 4 23 10 17 10" />
-          <polyline points="1 20 1 14 7 14" />
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-        </svg>
-        {refreshing ? 'Refreshing…' : 'Refresh RSI info'}
-      </button>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-4 w-4 {refreshing ? 'animate-spin' : ''}"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="23 4 23 10 17 10" />
+            <polyline points="1 20 1 14 7 14" />
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+          </svg>
+          {refreshing ? 'Refreshing…' : 'Refresh RSI info'}
+        </button>
+        {#if status.next_sync_at}
+          <span class="flex items-center gap-1.5 text-xs text-[#e2e8f0]/40">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 shrink-0 text-[#00d4ff]/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            Next sync {relativeTime(status.next_sync_at)}
+          </span>
+        {/if}
+      </div>
 
       {#if showDeleteConfirm}
         <div class="mt-4 flex items-center gap-3 rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3">

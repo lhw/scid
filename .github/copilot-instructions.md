@@ -8,8 +8,6 @@ applyTo: "**"
 
 SCID is an identity provider for Star Citizen fan websites. It uses Pocket ID (a lightweight OIDC provider) as the authentication backend and adds a companion service for RSI bio-based identity verification and self-service OIDC client registration.
 
-See [PLAN.md](../PLAN.md) for the full architecture and design decisions.
-
 ## Tech Stack
 
 - **OIDC Provider:** Pocket ID (Go + SvelteKit, deployed via Docker)

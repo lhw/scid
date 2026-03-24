@@ -3,7 +3,7 @@
   import { ModeWatcher } from 'mode-watcher';
   import { Toaster } from 'svelte-sonner';
   import { onMount } from 'svelte';
-  import { logout } from '$lib/utils/auth';
+  import { logout, login } from '$lib/utils/auth';
   import { getVerifyStatus } from '$lib/utils/api';
   import { PUBLIC_POCKET_ID_URL } from '$lib/utils/public-env';
 
@@ -43,44 +43,60 @@
     class="sticky top-0 z-50 border-b border-[#1e3a5f] bg-[#0a0e1a]/80 backdrop-blur-md"
   >
     <div class="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-      <a href="/" class="group flex flex-col leading-tight">
-        <span
-          class="text-2xl font-bold tracking-widest text-[#00d4ff] transition-opacity group-hover:opacity-80"
-        >
-          My SCID
-        </span>
-        <span class="text-xs text-[#e2e8f0]/50">Unofficial Star Citizen Identity Provider</span>
+      <a href="/" class="group flex items-center gap-2.5">
+        <img
+          src="/favicon.svg"
+          alt=""
+          aria-hidden="true"
+          class="h-8 w-8 shrink-0 transition-opacity group-hover:opacity-80"
+        />
+        <div class="flex flex-col leading-tight">
+          <span
+            class="text-2xl font-bold tracking-widest text-[#00d4ff] transition-opacity group-hover:opacity-80"
+          >
+            My SCID
+          </span>
+          <span class="text-xs text-[#e2e8f0]/50">Unofficial Star Citizen Identity Provider</span>
+        </div>
       </a>
       {#if isAuthenticated}
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
           <a
             href="/apps"
-            class="text-sm text-[#e2e8f0]/60 transition-colors hover:text-[#00d4ff]"
+            class="rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs font-medium text-[#e2e8f0]/60 transition-colors hover:border-[#00d4ff]/40 hover:text-[#00d4ff]"
           >
             My Apps
           </a>
           {#if isAdmin}
             <a
               href="/admin/apps"
-              class="text-sm text-[#e2e8f0]/60 transition-colors hover:text-[#ffd700]"
+              class="rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs font-medium text-[#e2e8f0]/60 transition-colors hover:border-[#ffd700]/40 hover:text-[#ffd700]"
             >
               Admin
             </a>
           {/if}
           <a
             href="{PUBLIC_POCKET_ID_URL}"
-            class="flex items-center gap-1.5 rounded-lg border border-[#1e3a5f] bg-[#0d1526] px-3.5 py-1.5 text-xs font-medium text-[#e2e8f0]/70 transition-colors hover:border-[#00d4ff]/40 hover:text-[#00d4ff]"
+            class="rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs font-medium text-[#e2e8f0]/60 transition-colors hover:border-[#00d4ff]/40 hover:text-[#00d4ff]"
           >
             Manage Account
           </a>
           <button
             type="button"
             onclick={handleSignOut}
-            class="text-sm text-[#e2e8f0]/60 transition-colors hover:text-[#00d4ff]"
+            class="rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs font-medium text-[#e2e8f0]/40 transition-colors hover:border-[#e2e8f0]/20 hover:text-[#e2e8f0]/70"
           >
             Sign Out
           </button>
         </div>
+      {:else}
+        <button
+          type="button"
+          onclick={() => login('/')}
+          class="rounded-lg border border-[#00d4ff]/40 bg-[#00d4ff]/5 px-3.5 py-1.5 text-xs font-semibold text-[#00d4ff] transition-colors hover:bg-[#00d4ff]/10"
+        >
+          Sign In
+        </button>
       {/if}
     </div>
   </header>

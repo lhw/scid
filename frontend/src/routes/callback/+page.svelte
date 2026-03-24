@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { handleCallback } from '$lib/utils/auth.js';
+  import { getVerifyStatus } from '$lib/utils/api.js';
 
   let error = $state('');
   let working = $state(true);
@@ -25,7 +26,19 @@
 
     try {
       const returnPath = await handleCallback(code, state);
-      window.location.replace(returnPath);
+      // If the OIDC flow was started from /verify but the user is already
+      // verified (e.g. they used the "Return to SCID" button from Pocket ID
+      // after an earlier login), send them straight to their profile instead.
+      let dest = returnPath;
+      if (returnPath === '/verify') {
+        try {
+          const status = await getVerifyStatus(fetch);
+          if (status?.verified) dest = '/';
+        } catch {
+          // status check failed; keep the original returnPath
+        }
+      }
+      window.location.replace(dest);
     } catch (e) {
       error = e instanceof Error ? e.message : 'Authentication failed.';
       working = false;
