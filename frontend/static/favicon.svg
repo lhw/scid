@@ -5,5 +5,5 @@
   <!-- Inner highlight -->
   <polygon points="16,8 23,13 20,26 12,26 9,13" fill="#00d4ff" fill-opacity="0.08"/>
   <!-- S letter -->
-  <text x="16" y="22" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#00d4ff">S</text>
+  <text x="16" y="22" text-anchor="middle" font-family="Verdana,Arial,sans-serif" font-size="13" font-weight="700" fill="#00d4ff">S</text>
 </svg>
