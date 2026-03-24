@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -284,4 +285,31 @@ func absoluteURL(src string) string {
 		return src
 	}
 	return "https://robertsspaceindustries.com" + src
+}
+
+// allowedImageHosts is the set of hostnames from which SCID will fetch images.
+// All URLs scraped from RSI pages should resolve to one of these domains.
+var allowedImageHosts = map[string]struct{}{
+	"robertsspaceindustries.com":       {},
+	"www.robertsspaceindustries.com":   {},
+	"media.robertsspaceindustries.com": {},
+	"cdn.robertsspaceindustries.com":   {},
+}
+
+// IsAllowedImageURL validates that a URL points to a known RSI host over HTTPS.
+// Returns false for internal/private networks, non-HTTPS, or unknown hosts.
+func IsAllowedImageURL(rawURL string) bool {
+	if rawURL == "" {
+		return false
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "https" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	_, ok := allowedImageHosts[host]
+	return ok
 }

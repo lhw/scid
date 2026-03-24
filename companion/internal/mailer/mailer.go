@@ -129,6 +129,11 @@ func (m *Mailer) send(to, subject, htmlBody string) error {
 		from = m.cfg.User
 	}
 
+	// Strip CR/LF to prevent header injection.
+	from = sanitizeHeader(from)
+	to = sanitizeHeader(to)
+	subject = sanitizeHeader(subject)
+
 	header := strings.Join([]string{
 		fmt.Sprintf("From: %s", from),
 		fmt.Sprintf("To: %s", to),
@@ -188,6 +193,12 @@ func (m *Mailer) sendTLS(addr, from, to string, msg []byte) error {
 		return fmt.Errorf("smtp write: %w", err)
 	}
 	return wc.Close()
+}
+
+// sanitizeHeader removes CR and LF characters to prevent email header injection.
+func sanitizeHeader(s string) string {
+	r := strings.NewReplacer("\r", "", "\n", "")
+	return r.Replace(s)
 }
 
 // --- HTML template ---

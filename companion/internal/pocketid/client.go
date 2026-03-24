@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/lhw/scid/companion/internal/rsi"
 )
 
 const defaultTimeout = 5 * time.Second
@@ -320,6 +322,10 @@ type UserDetail struct {
 // with a multipart/form-data body containing a field named "file".
 // A timeout longer than the default is used because the RSI CDN can be slow.
 func (c *Client) SetProfilePicture(ctx context.Context, userID, imageURL string) error {
+	if !rsi.IsAllowedImageURL(imageURL) {
+		return fmt.Errorf("refusing to fetch image from untrusted URL: %s", imageURL)
+	}
+
 	// Fetch the image with a generous timeout.
 	fetchClient := &http.Client{Timeout: 15 * time.Second}
 	imgReq, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)

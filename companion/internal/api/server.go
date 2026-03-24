@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -54,6 +55,7 @@ func New(cfg *config.Config, st *store.Store) *Server {
 	sessionManager.Cookie.SameSite = http.SameSiteLaxMode
 	sessionManager.Cookie.Secure = cfg.SessionCookieSecure
 	sessionManager.Cookie.Persist = true
+	sessionManager.HashTokenInStore = true
 
 	s := &Server{
 		cfg:      cfg,
@@ -84,7 +86,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) buildRouter() *chi.Mux {
 	r := chi.NewRouter()
 
-	r.Use(middleware.RealIP)
+	r.Use(s.trustedRealIP)
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -128,7 +130,7 @@ func (s *Server) buildRouter() *chi.Mux {
 		r.Get("/api/apps/{id}", s.handleGetApp)
 		r.Put("/api/apps/{id}", s.handleUpdateApp)
 		r.Delete("/api/apps/{id}", s.handleDeleteApp)
-		r.Post("/api/apps/{id}/secret", s.handleRotateSecret)
+		r.With(s.authenticatedRateLimitMiddleware("secret-rotate", 5, time.Hour)).Post("/api/apps/{id}/secret", s.handleRotateSecret)
 		r.Put("/api/apps/{id}/logo", s.handleUploadLogo)
 		// Admin endpoints — access enforced by requireAdmin middleware.
 		r.Route("/api/admin", func(r chi.Router) {
@@ -299,4 +301,51 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// trustedRealIP is a middleware that sets r.RemoteAddr from X-Forwarded-For or
+// X-Real-IP, but only when the direct peer is in cfg.TrustedProxies.
+func (s *Server) trustedRealIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.isTrustedProxy(r.RemoteAddr) {
+			if ip := forwardedIP(r); ip != "" {
+				r.RemoteAddr = ip
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) isTrustedProxy(remoteAddr string) bool {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range s.cfg.TrustedProxies {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func forwardedIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i > 0 {
+			xff = xff[:i]
+		}
+		if ip := net.ParseIP(strings.TrimSpace(xff)); ip != nil {
+			return ip.String()
+		}
+	}
+	if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
+		if ip := net.ParseIP(strings.TrimSpace(xrip)); ip != nil {
+			return ip.String()
+		}
+	}
+	return ""
 }

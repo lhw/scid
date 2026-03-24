@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -17,6 +18,9 @@ import (
 	"github.com/lhw/scid/companion/internal/pocketid"
 	"github.com/lhw/scid/companion/internal/store"
 )
+
+// validAppName allows alphanumeric characters, spaces, and hyphens only.
+var validAppName = regexp.MustCompile(`^[a-zA-Z0-9 -]+$`)
 
 // maxLogoSize is the maximum accepted logo upload size (1 MiB).
 const maxLogoSize = 1 << 20
@@ -100,6 +104,9 @@ func validateCreateAppRequest(req createAppRequest) string {
 	}
 	if len(name) > 50 {
 		return "name must be 50 characters or fewer"
+	}
+	if !validAppName.MatchString(name) {
+		return "name may only contain letters, digits, spaces, and hyphens"
 	}
 	if req.LaunchURL != "" {
 		if !strings.HasPrefix(req.LaunchURL, "https://") {

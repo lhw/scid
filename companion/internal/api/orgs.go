@@ -138,6 +138,11 @@ func cacheOrgLogo(ctx context.Context, sid, logoURL string) string {
 		return ""
 	}
 
+	if !rsi.IsAllowedImageURL(logoURL) {
+		slog.WarnContext(ctx, "cache org logo: untrusted URL", "sid", sid, "url", logoURL)
+		return ""
+	}
+
 	// Determine extension from URL (default to .png).
 	ext := ".png"
 	if idx := strings.LastIndex(logoURL, "."); idx != -1 {

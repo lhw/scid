@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -65,6 +66,12 @@ type Config struct {
 	SMTPFrom     string
 	// SMTPAdminEmail is the recipient address for admin notifications.
 	SMTPAdminEmail string
+
+	// TrustedProxies is the list of CIDR ranges whose X-Forwarded-For /
+	// X-Real-IP headers are trusted for determining the client IP.
+	// Parsed from TRUSTED_PROXIES (comma-separated CIDRs).
+	// Defaults to private network ranges (Docker, loopback).
+	TrustedProxies []*net.IPNet
 }
 
 // Load reads configuration from environment variables, applying defaults where
@@ -106,6 +113,12 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("POCKET_ID_ADMIN_API_KEY environment variable is required")
 	}
 
+	proxies, err := parseTrustedProxies(getEnv("TRUSTED_PROXIES", ""))
+	if err != nil {
+		return nil, fmt.Errorf("parse TRUSTED_PROXIES: %w", err)
+	}
+	cfg.TrustedProxies = proxies
+
 	return cfg, nil
 }
 
@@ -131,4 +144,44 @@ func smtpPort(s string) int {
 		return 587
 	}
 	return n
+}
+
+// defaultTrustedCIDRs are private/loopback ranges typical in Docker Compose deployments.
+var defaultTrustedCIDRs = []string{
+	"127.0.0.0/8",
+	"10.0.0.0/8",
+	"172.16.0.0/12",
+	"192.168.0.0/16",
+	"::1/128",
+	"fd00::/8",
+}
+
+func parseTrustedProxies(raw string) ([]*net.IPNet, error) {
+	cidrs := defaultTrustedCIDRs
+	if raw != "" {
+		cidrs = strings.Split(raw, ",")
+	}
+	var nets []*net.IPNet
+	for _, cidr := range cidrs {
+		cidr = strings.TrimSpace(cidr)
+		if cidr == "" {
+			continue
+		}
+		// Allow bare IPs by appending /32 or /128.
+		if !strings.Contains(cidr, "/") {
+			if ip := net.ParseIP(cidr); ip != nil {
+				if ip.To4() != nil {
+					cidr += "/32"
+				} else {
+					cidr += "/128"
+				}
+			}
+		}
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CIDR %q: %w", cidr, err)
+		}
+		nets = append(nets, ipNet)
+	}
+	return nets, nil
 }
