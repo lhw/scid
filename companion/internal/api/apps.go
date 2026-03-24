@@ -775,6 +775,17 @@ func (s *Server) handleApproveApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	if user, err := s.pid.GetUser(r.Context(), reg.OwnerUserID); err != nil {
+		slog.WarnContext(r.Context(), "approve: get owner failed", "client_id", clientID, "owner_user_id", reg.OwnerUserID, "err", err)
+	} else {
+		s.mailer.SendAppApprovedNotification(user.Email, mailer.AppDecisionNotification{
+			AppName:     client.Name,
+			AppID:       client.ID,
+			OwnerHandle: user.Username,
+			ActionURL:   "https://" + r.Host + "/apps/" + client.ID,
+			ActionLabel: "Open your application",
+		})
+	}
 	reg.Status = "approved"
 	reg.RejectionReason = ""
 	writeJSON(w, http.StatusOK, buildAppResponse(client, reg, ""))
@@ -802,6 +813,7 @@ func (s *Server) handleRejectApp(w http.ResponseWriter, r *http.Request) {
 
 	var req rejectRequest
 	_ = json.NewDecoder(r.Body).Decode(&req) // reason is optional
+	reason := strings.TrimSpace(req.Reason)
 
 	// Ensure the client remains restricted.
 	if err := s.syncOIDCClientAccess(r, clientID, "rejected", reg.VerifiedOnly); err != nil {
@@ -821,8 +833,20 @@ func (s *Server) handleRejectApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
+	if user, err := s.pid.GetUser(r.Context(), reg.OwnerUserID); err != nil {
+		slog.WarnContext(r.Context(), "reject: get owner failed", "client_id", clientID, "owner_user_id", reg.OwnerUserID, "err", err)
+	} else {
+		s.mailer.SendAppRejectedNotification(user.Email, mailer.AppDecisionNotification{
+			AppName:     client.Name,
+			AppID:       client.ID,
+			OwnerHandle: user.Username,
+			Reason:      reason,
+			ActionURL:   "https://" + r.Host + "/apps/" + client.ID,
+			ActionLabel: "Open your application",
+		})
+	}
 	reg.Status = "rejected"
-	reg.RejectionReason = strings.TrimSpace(req.Reason)
+	reg.RejectionReason = reason
 	writeJSON(w, http.StatusOK, buildAppResponse(client, reg, ""))
 }
 

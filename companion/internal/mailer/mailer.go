@@ -38,7 +38,7 @@ func New(cfg Config) *Mailer {
 
 // Enabled reports whether SMTP sending is configured.
 func (m *Mailer) Enabled() bool {
-	return m.cfg.Host != "" && m.cfg.AdminEmail != ""
+	return m.cfg.Host != ""
 }
 
 // NewAppNotification holds the data used to build a new-app notification email.
@@ -57,7 +57,7 @@ type NewAppNotification struct {
 // SendNewAppNotification fires an admin notification for a newly submitted app.
 // It is non-blocking: it logs errors but does not return them.
 func (m *Mailer) SendNewAppNotification(n NewAppNotification) {
-	if !m.Enabled() {
+	if !m.Enabled() || m.cfg.AdminEmail == "" {
 		return
 	}
 
@@ -70,6 +70,55 @@ func (m *Mailer) SendNewAppNotification(n NewAppNotification) {
 
 	if err := m.send(m.cfg.AdminEmail, subject, body); err != nil {
 		slog.Error("mailer: send new-app notification failed", "err", err)
+	}
+}
+
+// AppDecisionNotification holds the data used to build an approval/rejection email.
+type AppDecisionNotification struct {
+	AppName        string
+	AppID          string
+	OwnerHandle    string
+	OutcomeTitle   string
+	OutcomeMessage string
+	Reason         string
+	ActionLabel    string
+	ActionURL      string
+}
+
+// SendAppApprovedNotification informs the owner that their app was approved.
+func (m *Mailer) SendAppApprovedNotification(to string, n AppDecisionNotification) {
+	if !m.Enabled() || to == "" {
+		return
+	}
+	n.OutcomeTitle = "Application approved"
+	n.OutcomeMessage = "Your SCID application has been approved and is now active."
+	if n.ActionLabel == "" {
+		n.ActionLabel = "Open your application"
+	}
+	m.sendAppDecisionNotification(to, fmt.Sprintf("[SCID] Application approved: %s", n.AppName), n)
+}
+
+// SendAppRejectedNotification informs the owner that their app was rejected.
+func (m *Mailer) SendAppRejectedNotification(to string, n AppDecisionNotification) {
+	if !m.Enabled() || to == "" {
+		return
+	}
+	n.OutcomeTitle = "Application rejected"
+	n.OutcomeMessage = "Your SCID application was reviewed and rejected by an administrator."
+	if n.ActionLabel == "" {
+		n.ActionLabel = "Open your application"
+	}
+	m.sendAppDecisionNotification(to, fmt.Sprintf("[SCID] Application rejected: %s", n.AppName), n)
+}
+
+func (m *Mailer) sendAppDecisionNotification(to, subject string, n AppDecisionNotification) {
+	body, err := renderAppDecisionEmail(n)
+	if err != nil {
+		slog.Error("mailer: render app decision email failed", "err", err)
+		return
+	}
+	if err := m.send(to, subject, body); err != nil {
+		slog.Error("mailer: send app decision notification failed", "err", err)
 	}
 }
 
@@ -151,6 +200,8 @@ var tmplFuncs = template.FuncMap{
 
 var newAppTmpl = template.Must(template.New("new-app").Funcs(tmplFuncs).Parse(newAppTmplSrc))
 
+var appDecisionTmpl = template.Must(template.New("app-decision").Funcs(tmplFuncs).Parse(appDecisionTmplSrc))
+
 // row is a sub-template for label/value pairs inside the detail card.
 var _ = template.Must(newAppTmpl.New("row").Parse(`
 <tr>
@@ -162,6 +213,14 @@ var _ = template.Must(newAppTmpl.New("row").Parse(`
 func renderNewAppEmail(n NewAppNotification) (string, error) {
 	var buf bytes.Buffer
 	if err := newAppTmpl.Execute(&buf, n); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+func renderAppDecisionEmail(n AppDecisionNotification) (string, error) {
+	var buf bytes.Buffer
+	if err := appDecisionTmpl.Execute(&buf, n); err != nil {
 		return "", err
 	}
 	return buf.String(), nil
