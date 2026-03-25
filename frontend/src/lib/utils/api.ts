@@ -109,6 +109,7 @@ export interface AppRegistration {
   id: string;
   client_secret?: string; // only present on create or rotate
   name: string;
+  description?: string;
   owner_username?: string; // only present in admin context
   launch_url?: string;
   redirect_uris: string[];
@@ -125,6 +126,7 @@ export interface AppRegistration {
 
 export interface CreateAppRequest {
   name: string;
+  description?: string;
   launch_url?: string;
   redirect_uris: string[];
   logout_uris: string[];
@@ -137,6 +139,7 @@ export interface CreateAppRequest {
 export interface DirectoryApp {
   id: string;
   name: string;
+  description?: string;
   launch_url: string;
   has_logo: boolean;
   verified_only: boolean;

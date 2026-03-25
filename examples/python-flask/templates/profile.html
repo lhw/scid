@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Profile — SCID Flask Example</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; background: #0a0e1a; color: #e2e8f0; }
+    body  { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; padding: 2rem; gap: 1.5rem; box-sizing: border-box; }
+    h1    { font-size: 1.5rem; margin: 0; color: #00d4ff; }
+    dl    { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1.5rem; max-width: 480px; width: 100%; font-size: 0.9rem;
+            background: #1e3a5f22; border: 1px solid #1e3a5f; border-radius: 12px; padding: 1.25rem 1.5rem; }
+    dt   { color: #e2e8f0aa; }
+    dd   { margin: 0; word-break: break-all; }
+    a    { color: #00d4ff; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Profile</h1>
+  <dl>
+    {% for key, value in user.items() %}
+      {% if value is not none and value != '' %}
+        <dt>{{ key }}</dt>
+        <dd>{{ value }}</dd>
+      {% endif %}
+    {% endfor %}
+  </dl>
+  <a href="/logout">Sign out</a>
+  <a href="/">← Home</a>
+</body>
+</html>

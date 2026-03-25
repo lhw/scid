@@ -96,6 +96,7 @@ const migrations = `
 ALTER TABLE app_registrations ADD COLUMN status TEXT NOT NULL DEFAULT 'approved';
 ALTER TABLE app_registrations ADD COLUMN rejection_reason TEXT NOT NULL DEFAULT '';
 ALTER TABLE app_registrations ADD COLUMN listed INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE app_registrations ADD COLUMN description TEXT NOT NULL DEFAULT '';
 `
 
 // VerificationToken represents a row in the verification_tokens table.
@@ -336,14 +337,15 @@ type AppRegistration struct {
 	Listed          bool   // listed in the public app directory
 	Status          string // "pending" | "approved" | "rejected"
 	RejectionReason string
+	Description     string // optional short description shown in the directory
 	CreatedAt       time.Time
 }
 
 // CreateAppRegistration inserts a new app registration row.
 func (s *Store) CreateAppRegistration(ctx context.Context, reg *AppRegistration) error {
 	const q = `
-INSERT INTO app_registrations (id, oidc_client_id, owner_user_id, verified_only, listed, status, rejection_reason, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+INSERT INTO app_registrations (id, oidc_client_id, owner_user_id, verified_only, listed, status, rejection_reason, description, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	verifiedOnly := 0
 	if reg.VerifiedOnly {
 		verifiedOnly = 1
@@ -357,7 +359,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 		status = "approved"
 	}
 	_, err := s.execContext(ctx, q,
-		reg.ID, reg.OIDCClientID, reg.OwnerUserID, verifiedOnly, listed, status, reg.RejectionReason,
+		reg.ID, reg.OIDCClientID, reg.OwnerUserID, verifiedOnly, listed, status, reg.RejectionReason, reg.Description,
 		reg.CreatedAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("insert app registration: %w", err)
@@ -369,7 +371,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 // Returns ErrNotFound if no matching row exists.
 func (s *Store) GetAppRegistrationByClientID(ctx context.Context, oidcClientID string) (*AppRegistration, error) {
 	const q = `
-SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), created_at
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), created_at
 FROM app_registrations
 WHERE oidc_client_id = ?`
 	return scanAppRegistration(s.queryRowContext(ctx, q, oidcClientID))
@@ -378,7 +380,7 @@ WHERE oidc_client_id = ?`
 // ListAppRegistrationsByOwner returns all app registrations for a given user.
 func (s *Store) ListAppRegistrationsByOwner(ctx context.Context, ownerUserID string) ([]AppRegistration, error) {
 	const q = `
-SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), created_at
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), created_at
 FROM app_registrations
 WHERE owner_user_id = ?
 ORDER BY created_at ASC`
@@ -429,10 +431,19 @@ func (s *Store) UpdateAppRegistrationListed(ctx context.Context, oidcClientID st
 	return nil
 }
 
+// UpdateAppRegistrationDescription updates the description for an app.
+func (s *Store) UpdateAppRegistrationDescription(ctx context.Context, oidcClientID, description string) error {
+	const q = `UPDATE app_registrations SET description = ? WHERE oidc_client_id = ?`
+	if _, err := s.execContext(ctx, q, description, oidcClientID); err != nil {
+		return fmt.Errorf("update app registration description: %w", err)
+	}
+	return nil
+}
+
 // ListListedApps returns all approved apps that have opted into the public directory.
 func (s *Store) ListListedApps(ctx context.Context) ([]AppRegistration, error) {
 	const q = `
-SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), created_at
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), created_at
 FROM app_registrations
 WHERE COALESCE(listed,0) = 1 AND COALESCE(status,'approved') = 'approved'
 ORDER BY created_at ASC`
@@ -442,7 +453,7 @@ ORDER BY created_at ASC`
 // ListPendingAppRegistrations returns all app registrations with status='pending'.
 func (s *Store) ListPendingAppRegistrations(ctx context.Context) ([]AppRegistration, error) {
 	const q = `
-SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), created_at
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), created_at
 FROM app_registrations
 WHERE COALESCE(status,'approved') = 'pending'
 ORDER BY created_at ASC`
@@ -452,7 +463,7 @@ ORDER BY created_at ASC`
 // ListAllAppRegistrations returns all app registrations ordered by creation date.
 func (s *Store) ListAllAppRegistrations(ctx context.Context) ([]AppRegistration, error) {
 	const q = `
-SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), created_at
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), created_at
 FROM app_registrations
 ORDER BY created_at DESC`
 	return queryAppRegistrations(s, ctx, q)
@@ -480,7 +491,7 @@ func scanAppRegistration(row *sql.Row) (*AppRegistration, error) {
 	var reg AppRegistration
 	var verifiedOnly, listed int
 	var createdAt string
-	err := row.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &listed, &reg.Status, &reg.RejectionReason, &createdAt)
+	err := row.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &listed, &reg.Status, &reg.RejectionReason, &reg.Description, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -497,7 +508,7 @@ func scanAppRegistrationRow(rows *sql.Rows) (*AppRegistration, error) {
 	var reg AppRegistration
 	var verifiedOnly, listed int
 	var createdAt string
-	err := rows.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &listed, &reg.Status, &reg.RejectionReason, &createdAt)
+	err := rows.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &listed, &reg.Status, &reg.RejectionReason, &reg.Description, &createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("scan app registration: %w", err)
 	}

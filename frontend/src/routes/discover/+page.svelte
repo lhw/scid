@@ -11,6 +11,11 @@
   onMount(async () => {
     try {
       apps = await listPublicApps();
+      // Randomise order on each visit so no app gets permanent top placement.
+      for (let i = apps.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [apps[i], apps[j]] = [apps[j], apps[i]];
+      }
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load apps';
     } finally {
@@ -78,6 +83,10 @@
               {/if}
             </div>
           </div>
+
+          {#if app.description}
+            <p class="mb-3 text-xs text-[#e2e8f0]/50 line-clamp-2">{app.description}</p>
+          {/if}
 
           <div class="mt-auto flex items-center justify-between">
             <span class="truncate text-xs text-[#e2e8f0]/30">{app.launch_url.replace(/^https?:\/\//, '')}</span>

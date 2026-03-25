@@ -16,6 +16,7 @@
 
   // Form state
   let formName = $state('');
+  let formDescription = $state('');
   let formLaunchURL = $state('');
   let formRedirectURIs = $state(['']);
   let formLogoutURIs = $state<string[]>([]);
@@ -82,6 +83,7 @@
     try {
       const req: CreateAppRequest = {
         name: formName.trim(),
+        description: formDescription.trim() || undefined,
         launch_url: formLaunchURL.trim() || undefined,
         redirect_uris: formRedirectURIs.filter(u => u.trim()),
         logout_uris: formLogoutURIs.filter(u => u.trim()),
@@ -116,6 +118,7 @@
 
   function resetForm() {
     formName = '';
+    formDescription = '';
     formLaunchURL = '';
     formRedirectURIs = [''];
     formLogoutURIs = [];
@@ -205,7 +208,19 @@
             {#if formErrors.launchURL}<p class="mt-1 text-xs text-red-400">{formErrors.launchURL}</p>{/if}
           </div>
 
-          <!-- Redirect URIs -->
+          <!-- Description -->
+          <div>
+            <label for="app-description" class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Description</label>
+            <textarea
+              id="app-description"
+              bind:value={formDescription}
+              maxlength="200"
+              rows="2"
+              placeholder="A short description shown in the app directory"
+              class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30 resize-none"
+            ></textarea>
+            <p class="mt-1 text-xs text-[#e2e8f0]/30">{formDescription.length}/200</p>
+          </div>
           <div>
             <p class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">
               Redirect URIs <span class="text-red-400">*</span>

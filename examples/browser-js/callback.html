@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SCID — Signing in…</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; background: #0a0e1a; color: #e2e8f0; }
+    body  { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; gap: 1rem; }
+    h1    { font-size: 1.5rem; margin: 0; color: #00d4ff; }
+    p     { margin: 0; color: #e2e8f0aa; font-size: 0.9rem; }
+    pre   { background: #1e3a5f44; border: 1px solid #1e3a5f; border-radius: 8px; padding: 1rem; max-width: 600px; overflow-x: auto; font-size: 0.8rem; color: #e2e8f0cc; }
+    #error { color: #f87171; }
+    a     { color: #00d4ff; }
+    dl    { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; max-width: 480px; font-size: 0.9rem; }
+    dt   { color: #e2e8f0aa; }
+    dd   { margin: 0; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <h1>SCID Browser JS Example</h1>
+    <p>Completing sign-in…</p>
+  </div>
+  <div id="profile" style="display:none; flex-direction:column; align-items:center; gap:1rem;">
+    <h1>Signed in!</h1>
+    <dl id="claims"></dl>
+    <p style="margin-top:0.5rem;"><a href="index.html">← Back</a></p>
+  </div>
+  <div id="error-box" style="display:none; flex-direction:column; align-items:center; gap:0.5rem;">
+    <h1 style="color:#f87171">Sign-in failed</h1>
+    <p id="error"></p>
+    <p><a href="index.html">← Try again</a></p>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    async function main() {
+      try {
+        const tokens   = await handleCallback();
+        const userinfo = await fetchUserInfo(tokens.access_token);
+
+        document.getElementById('loading').style.display = 'none';
+
+        const claims = document.getElementById('claims');
+        const interesting = [
+          ['Subject (sub)',       userinfo.sub],
+          ['Name',                userinfo.name],
+          ['Preferred username',  userinfo.preferred_username],
+          ['Email',               userinfo.email],
+          ['RSI Handle',          userinfo.rsi_handle],
+          ['RSI Verified at',     userinfo.rsi_verified_at],
+        ];
+        for (const [label, value] of interesting) {
+          if (value == null) continue;
+          claims.insertAdjacentHTML('beforeend',
+            `<dt>${label}</dt><dd>${escapeHTML(String(value))}</dd>`);
+        }
+
+        document.getElementById('profile').style.display = 'flex';
+      } catch (err) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('error').textContent = err.message;
+        document.getElementById('error-box').style.display = 'flex';
+      }
+    }
+
+    function escapeHTML(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    main();
+  </script>
+</body>
+</html>

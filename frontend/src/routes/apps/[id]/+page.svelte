@@ -32,6 +32,7 @@
 
   // Edit form state
   let editName = $state('');
+  let editDescription = $state('');
   let editLaunchURL = $state('');
   let editRedirectURIs = $state(['']);
   let editLogoutURIs = $state<string[]>([]);
@@ -66,6 +67,7 @@
   function startEdit() {
     if (!app) return;
     editName = app.name;
+    editDescription = app.description ?? '';
     editLaunchURL = app.launch_url ?? '';
     editRedirectURIs = app.redirect_uris.length ? [...app.redirect_uris] : [''];
     editLogoutURIs = [...app.logout_uris];
@@ -100,6 +102,7 @@
     try {
       const req: CreateAppRequest = {
         name: editName.trim(),
+        description: editDescription.trim() || undefined,
         launch_url: editLaunchURL.trim() || undefined,
         redirect_uris: editRedirectURIs.filter(u => u.trim()),
         logout_uris: editLogoutURIs.filter(u => u.trim()),
@@ -248,6 +251,9 @@
             {/if}
           </div>
           <p class="mt-1 text-xs text-[#e2e8f0]/30">Created {app.created_at.slice(0, 10)}</p>
+          {#if app.description}
+            <p class="mt-2 text-sm text-[#e2e8f0]/60">{app.description}</p>
+          {/if}
           {#if app.status === 'pending'}
             <p class="mt-1 text-xs text-yellow-400/70">Your application is awaiting admin review. It will not be usable until approved.</p>
           {:else if app.status === 'rejected' && app.rejection_reason}
@@ -340,6 +346,15 @@
             <input id="edit-app-launch-url" type="url" bind:value={editLaunchURL} placeholder="https://example.com"
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30" />
             {#if editErrors.launchURL}<p class="mt-1 text-xs text-red-400">{editErrors.launchURL}</p>{/if}
+          </div>
+
+          <div>
+            <label for="edit-app-description" class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Description</label>
+            <textarea id="edit-app-description" bind:value={editDescription} maxlength="200" rows="2"
+              placeholder="A short description shown in the app directory"
+              class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30 resize-none"
+            ></textarea>
+            <p class="mt-1 text-xs text-[#e2e8f0]/30">{editDescription.length}/200</p>
           </div>
 
           <div>

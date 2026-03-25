@@ -32,6 +32,7 @@ const maxAppsPerUser = 5
 
 type createAppRequest struct {
 	Name         string   `json:"name"`
+	Description  string   `json:"description"`
 	LaunchURL    string   `json:"launch_url"`
 	RedirectURIs []string `json:"redirect_uris"`
 	LogoutURIs   []string `json:"logout_uris"`
@@ -45,6 +46,7 @@ type appResponse struct {
 	ID              string   `json:"id"`
 	ClientSecret    string   `json:"client_secret,omitempty"`
 	Name            string   `json:"name"`
+	Description     string   `json:"description,omitempty"`
 	OwnerUsername   string   `json:"owner_username,omitempty"`
 	LaunchURL       string   `json:"launch_url,omitempty"`
 	RedirectURIs    []string `json:"redirect_uris"`
@@ -81,6 +83,7 @@ func buildAppResponse(client *pocketid.OIDCClient, reg *store.AppRegistration, s
 		ID:              client.ID,
 		ClientSecret:    secret,
 		Name:            client.Name,
+		Description:     reg.Description,
 		LaunchURL:       launchURL,
 		RedirectURIs:    redirectURIs,
 		LogoutURIs:      logoutURIs,
@@ -107,6 +110,9 @@ func validateCreateAppRequest(req createAppRequest) string {
 	}
 	if !validAppName.MatchString(name) {
 		return "name may only contain letters, digits, spaces, and hyphens"
+	}
+	if len([]rune(req.Description)) > 200 {
+		return "description must be 200 characters or fewer"
 	}
 	if req.LaunchURL != "" {
 		if !strings.HasPrefix(req.LaunchURL, "https://") {
@@ -406,9 +412,10 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		VerifiedOnly: req.VerifiedOnly,
 		// Persist listing intent even while pending; the directory already filters
 		// for approved apps only.
-		Listed:    req.Listed,
-		Status:    status,
-		CreatedAt: time.Now().UTC(),
+		Listed:      req.Listed,
+		Description: strings.TrimSpace(req.Description),
+		Status:      status,
+		CreatedAt:   time.Now().UTC(),
 	}
 	if err := s.store.CreateAppRegistration(r.Context(), reg); err != nil {
 		slog.ErrorContext(r.Context(), "store app registration failed", "client_id", client.ID, "err", err)
@@ -582,6 +589,16 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		}
 		listedUpdated = true
 		reg.Listed = req.Listed
+	}
+
+	newDescription := strings.TrimSpace(req.Description)
+	if newDescription != reg.Description {
+		if err := s.store.UpdateAppRegistrationDescription(r.Context(), clientID, newDescription); err != nil {
+			slog.ErrorContext(r.Context(), "update app registration description failed", "client_id", clientID, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		reg.Description = newDescription
 	}
 
 	writeJSON(w, http.StatusOK, buildAppResponse(client, reg, ""))
@@ -863,6 +880,7 @@ func (s *Server) handleRejectApp(w http.ResponseWriter, r *http.Request) {
 type directoryAppResponse struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
 	LaunchURL    string `json:"launch_url"`
 	HasLogo      bool   `json:"has_logo"`
 	VerifiedOnly bool   `json:"verified_only"`
@@ -894,6 +912,7 @@ func (s *Server) handleListDirectoryApps(w http.ResponseWriter, r *http.Request)
 		apps = append(apps, directoryAppResponse{
 			ID:           client.ID,
 			Name:         client.Name,
+			Description:  reg.Description,
 			LaunchURL:    launchURL,
 			HasLogo:      client.HasLogo,
 			VerifiedOnly: reg.VerifiedOnly,

@@ -201,10 +201,9 @@
         </div>
       {/if}
     </div>
-  </div>
 
   {#if status.orgs && status.orgs.length > 0}
-    <div class="mx-auto mt-6 w-full max-w-2xl px-6">
+    <div class="mt-6">
       <div class="rounded-2xl border border-[#1e3a5f] bg-[#0d1526] p-6 shadow-[0_0_40px_rgba(0,212,255,0.04)]">
         <h2 class="mb-4 text-xs font-medium uppercase tracking-wider text-[#e2e8f0]/40">RSI Organizations</h2>
         <ul class="space-y-3">
@@ -243,6 +242,7 @@
       </div>
     </div>
   {/if}
+  </div>
 
 {:else if status?.authenticated}
   <!-- Authenticated but not yet RSI-verified — skip the marketing pitch and

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SCID Flask Example</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; background: #0a0e1a; color: #e2e8f0; }
+    body  { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; margin: 0; gap: 1.5rem; }
+    h1    { font-size: 1.5rem; margin: 0; color: #00d4ff; }
+    p     { margin: 0; color: #e2e8f0aa; font-size: 0.9rem; text-align: center; max-width: 360px; }
+    a.btn {
+      background: #00d4ff22; border: 1px solid #00d4ff66; color: #00d4ff;
+      padding: 0.6rem 1.4rem; border-radius: 8px; text-decoration: none; font-size: 1rem;
+      transition: background 0.15s;
+    }
+    a.btn:hover { background: #00d4ff44; }
+  </style>
+</head>
+<body>
+  <h1>SCID Flask Example</h1>
+  {% if user %}
+    <p>Signed in as <strong>{{ user.preferred_username or user.sub }}</strong>.</p>
+    <a class="btn" href="/profile">View profile</a>
+    <a style="color:#e2e8f0aa; font-size:0.85rem;" href="/logout">Sign out</a>
+  {% else %}
+    <p>A minimal demo of confidential-client OIDC authentication with SCID.</p>
+    <a class="btn" href="/login">Sign in with SCID</a>
+  {% endif %}
+</body>
+</html>
