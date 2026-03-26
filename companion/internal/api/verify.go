@@ -225,21 +225,36 @@ func (s *Server) completeVerification(
 		return fmt.Errorf("ensure verified group: %w", err)
 	}
 
+	var staffGroup *pocketid.Group
+	if isRSIStaffCandidate(vt.RSIHandle, profile) {
+		staffGroup, err = s.pid.EnsureGroupExists(ctx, "rsi:staff", "RSI Staff")
+		if err != nil {
+			return fmt.Errorf("ensure staff group: %w", err)
+		}
+	}
+
 	currentGroups, err := s.pid.GetUserGroups(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("get user groups: %w", err)
 	}
 
-	groupIDs := make([]string, 0, len(currentGroups)+1)
+	groupIDs := make([]string, 0, len(currentGroups)+2)
 	alreadyVerified := false
+	alreadyStaff := false
 	for _, g := range currentGroups {
 		groupIDs = append(groupIDs, g.ID)
 		if g.ID == verifiedGroup.ID {
 			alreadyVerified = true
 		}
+		if staffGroup != nil && g.ID == staffGroup.ID {
+			alreadyStaff = true
+		}
 	}
 	if !alreadyVerified {
 		groupIDs = append(groupIDs, verifiedGroup.ID)
+	}
+	if staffGroup != nil && !alreadyStaff {
+		groupIDs = append(groupIDs, staffGroup.ID)
 	}
 
 	if err := s.pid.SetUserGroups(ctx, userID, groupIDs); err != nil {
@@ -268,7 +283,7 @@ func (s *Server) completeVerification(
 	}
 
 	// Sync org memberships in the background (non-fatal).
-	go s.syncUserOrgs(context.Background(), userID, vt.RSIHandle)
+	go s.syncUserOrgs(context.Background(), userID, vt.RSIHandle, profile)
 
 	// Seed the background org re-sync schedule so the job knows when this
 	// user is next due. synced_at = now means the first background sync fires
@@ -452,7 +467,7 @@ func (s *Server) handleVerifyRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Sync org memberships synchronously during refresh so the response includes up-to-date orgs.
-	s.syncUserOrgs(r.Context(), user.ID, handle)
+	s.syncUserOrgs(r.Context(), user.ID, handle, profile)
 
 	// Reset the re-sync timer so the background job won't fire again for 7 days.
 	if err := s.store.UpsertOrgSync(r.Context(), user.ID, handle, time.Now()); err != nil {

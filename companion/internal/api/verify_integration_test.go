@@ -173,6 +173,71 @@ func TestVerifyConfirm_Success(t *testing.T) {
 	}
 }
 
+func TestVerifyConfirm_AddsStaffGroup(t *testing.T) {
+	env := newTestEnv(t, false)
+	env.addUser("tok-staff", "user-staff", "staff")
+
+	resp := env.do(http.MethodPost, "/api/verify/start", "tok-staff", map[string]string{"handle": "Proxus-CIG"})
+	env.mustStatus(resp, http.StatusOK)
+	var sr startResponse
+	env.decodeJSON(resp, &sr)
+
+	env.scraper.setProfile(&rsi.Profile{
+		Bio:               "My SCID token: " + sr.Token,
+		HasDeveloperBadge: true,
+		CitizenRecord:     "#1406355",
+		Enlisted:          "Jul 5, 2016",
+	})
+
+	resp = env.do(http.MethodPost, "/api/verify/confirm", "tok-staff", nil)
+	env.mustStatus(resp, http.StatusOK)
+	env.drain(resp)
+
+	groups := env.pid.getUserGroups("user-staff")
+	foundVerified := false
+	foundStaff := false
+	for _, g := range groups {
+		switch g.Name {
+		case "verified":
+			foundVerified = true
+		case "rsi:staff":
+			foundStaff = true
+		}
+	}
+	if !foundVerified {
+		t.Error("expected verified group to be assigned")
+	}
+	if !foundStaff {
+		t.Error("expected rsi:staff group to be assigned")
+	}
+}
+
+func TestVerifyConfirm_DoesNotAddStaffGroupWithoutBadge(t *testing.T) {
+	env := newTestEnv(t, false)
+	env.addUser("tok-staff", "user-staff", "staff")
+
+	resp := env.do(http.MethodPost, "/api/verify/start", "tok-staff", map[string]string{"handle": "Proxus-CIG"})
+	env.mustStatus(resp, http.StatusOK)
+	var sr startResponse
+	env.decodeJSON(resp, &sr)
+
+	env.scraper.setProfile(&rsi.Profile{
+		Bio:      "My SCID token: " + sr.Token,
+		Enlisted: "Jul 5, 2016",
+	})
+
+	resp = env.do(http.MethodPost, "/api/verify/confirm", "tok-staff", nil)
+	env.mustStatus(resp, http.StatusOK)
+	env.drain(resp)
+
+	groups := env.pid.getUserGroups("user-staff")
+	for _, g := range groups {
+		if g.Name == "rsi:staff" {
+			t.Fatal("did not expect rsi:staff group without developer badge")
+		}
+	}
+}
+
 // TestVerifyStatus_Unauthenticated returns authenticated:false for no-auth requests.
 func TestVerifyStatus_Unauthenticated(t *testing.T) {
 	env := newTestEnv(t, false)

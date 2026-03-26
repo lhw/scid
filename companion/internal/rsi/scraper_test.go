@@ -22,6 +22,7 @@ const mockProfileHTML = `<!DOCTYPE html>
     <div class="profile-header">
       <div class="profile-main-info">
         <div class="handle" data-bind="username">CyFreeze</div>
+				<img src="/media/bkxsdklvwlhfqr/heap_thumb/Developer.png" alt="Developer" />
       </div>
     </div>
 
@@ -145,6 +146,17 @@ func TestFetchProfile_Enlisted(t *testing.T) {
 	}
 	if profile.Enlisted != "Oct 18, 2012" {
 		t.Errorf("expected Enlisted='Oct 18, 2012', got: %q", profile.Enlisted)
+	}
+}
+
+func TestFetchProfile_DeveloperBadge(t *testing.T) {
+	s, _ := scraperFor(t, http.StatusOK, mockProfileHTML)
+	profile, err := s.FetchProfile(context.Background(), "CyFreeze")
+	if err != nil {
+		t.Fatalf("FetchProfile: %v", err)
+	}
+	if !profile.HasDeveloperBadge {
+		t.Error("expected HasDeveloperBadge to be true")
 	}
 }
 

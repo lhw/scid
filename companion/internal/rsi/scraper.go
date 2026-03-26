@@ -27,11 +27,12 @@ type RSIScraper interface {
 
 // Profile holds the fields we extract from a public RSI profile page.
 type Profile struct {
-	Handle        string
-	Bio           string
-	CitizenRecord string // e.g. "#40746"
-	Enlisted      string // e.g. "Oct 18, 2012"
-	AvatarURL     string // absolute URL to the user's RSI avatar image
+	Handle            string
+	Bio               string
+	HasDeveloperBadge bool
+	CitizenRecord     string // e.g. "#40746"
+	Enlisted          string // e.g. "Oct 18, 2012"
+	AvatarURL         string // absolute URL to the user's RSI avatar image
 }
 
 // Scraper fetches and parses RSI public profile pages.
@@ -99,6 +100,9 @@ func parseProfile(handle string, doc *html.Node) *Profile {
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode {
 			switch {
+			case !p.HasDeveloperBadge && hasDeveloperBadge(n):
+				p.HasDeveloperBadge = true
+
 			case hasCSSClass(n, "bio") || hasDataAttr(n, "bio"):
 				// The bio is typically inside a <div class="bio"> or similar.
 				p.Bio = strings.TrimSpace(extractText(n))
@@ -174,6 +178,28 @@ func parseProfile(handle string, doc *html.Node) *Profile {
 	p.CitizenRecord = strings.TrimLeft(strings.TrimSpace(p.CitizenRecord), "#")
 
 	return p
+}
+
+// hasDeveloperBadge reports whether an element looks like RSI's public
+// developer badge for staff accounts.
+func hasDeveloperBadge(n *html.Node) bool {
+	if n.Type != html.ElementNode {
+		return false
+	}
+
+	if n.Data == "img" {
+		if src := strings.ToLower(getAttr(n, "src")); strings.Contains(src, "developer.png") {
+			return true
+		}
+	}
+
+	for _, attr := range []string{"alt", "title", "aria-label", "data-label"} {
+		if strings.Contains(strings.ToLower(getAttr(n, attr)), "developer") {
+			return true
+		}
+	}
+
+	return false
 }
 
 // hasCSSClass reports whether an element node has the given class among its

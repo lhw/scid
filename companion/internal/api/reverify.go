@@ -129,7 +129,14 @@ func (s *Server) runOrgSyncPass(ctx context.Context) {
 		}
 
 		slog.Debug("reverify: syncing user orgs", "user_id", entry.PocketIDUserID, "handle", entry.Handle)
-		s.syncUserOrgs(ctx, entry.PocketIDUserID, entry.Handle)
+		profile, err := s.scraper.FetchProfile(ctx, entry.Handle)
+		if err != nil {
+			slog.Warn("reverify: fetch profile", "user_id", entry.PocketIDUserID, "handle", entry.Handle, "err", err)
+			metricOrgSyncs.WithLabelValues("fetch_error").Inc()
+			continue
+		}
+
+		s.syncUserOrgs(ctx, entry.PocketIDUserID, entry.Handle, profile)
 		metricOrgSyncs.WithLabelValues("synced").Inc()
 
 		// Stamp the sync time regardless of whether syncUserOrgs had errors —

@@ -131,6 +131,10 @@ func New(source string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
+	if driver == "sqlite" {
+		db.SetMaxOpenConns(1)
+		db.SetMaxIdleConns(1)
+	}
 	if _, err := db.Exec(commonSchema + schema); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate db: %w", err)

@@ -28,7 +28,7 @@ var orgHTTPClient = &http.Client{Timeout: 15 * time.Second}
 // syncUserOrgs scrapes the user's RSI orgs page, caches org metadata and logos,
 // and stores the user's org memberships in the DB. It is designed to be called
 // non-fatally: errors are logged but do not fail the parent operation.
-func (s *Server) syncUserOrgs(ctx context.Context, userID, handle string) {
+func (s *Server) syncUserOrgs(ctx context.Context, userID, handle string, profile *rsi.Profile) {
 	orgs, err := s.scraper.FetchOrgs(ctx, handle)
 	if err != nil {
 		slog.WarnContext(ctx, "sync orgs: fetch failed", "handle", handle, "err", err)
@@ -80,15 +80,17 @@ func (s *Server) syncUserOrgs(ctx context.Context, userID, handle string) {
 		slog.WarnContext(ctx, "sync orgs: set user orgs", "user_id", userID, "err", err)
 	}
 
-	// Sync rsi:<SID> groups to Pocket ID so OIDC tokens carry org membership.
-	s.syncOrgGroupsToPocketID(ctx, userID, orgs)
+	// Sync RSI-managed groups to Pocket ID so OIDC tokens carry org membership
+	// and the staff marker when applicable.
+	s.syncOrgGroupsToPocketID(ctx, userID, handle, orgs, profile)
 }
 
 // syncOrgGroupsToPocketID ensures that Pocket ID has an rsi:<SID> group for
 // every org and that the user's group membership reflects their current orgs.
-// It keeps all non-rsi: groups the user already has; only rsi: groups are
-// managed here.  Errors are logged non-fatally.
-func (s *Server) syncOrgGroupsToPocketID(ctx context.Context, userID string, orgs []rsi.OrgInfo) {
+// It keeps all non-rsi: groups the user already has plus the verified group;
+// only rsi: org groups and the staff marker are managed here. Errors are
+// logged non-fatally.
+func (s *Server) syncOrgGroupsToPocketID(ctx context.Context, userID, handle string, orgs []rsi.OrgInfo, profile *rsi.Profile) {
 	// Get the user's current groups so we can preserve non-rsi ones.
 	currentGroups, err := s.pid.GetUserGroups(ctx, userID)
 	if err != nil {
@@ -104,8 +106,26 @@ func (s *Server) syncOrgGroupsToPocketID(ctx context.Context, userID string, org
 		}
 	}
 
+	// Build the managed RSI group set from the verified marker, the staff
+	// marker, and all currently scraped org groups.
+	managedGroupIDs := make([]string, 0, len(orgs)+2)
+	verifiedGroup, err := s.pid.EnsureGroupExists(ctx, "verified", "Verified RSI Citizens")
+	if err != nil {
+		slog.WarnContext(ctx, "sync org groups: ensure verified group", "err", err)
+	} else {
+		managedGroupIDs = append(managedGroupIDs, verifiedGroup.ID)
+	}
+
+	if isRSIStaffCandidate(handle, profile) {
+		staffGroup, err := s.pid.EnsureGroupExists(ctx, "rsi:staff", "RSI Staff")
+		if err != nil {
+			slog.WarnContext(ctx, "sync org groups: ensure staff group", "err", err)
+		} else {
+			managedGroupIDs = append(managedGroupIDs, staffGroup.ID)
+		}
+	}
+
 	// For each scraped org, ensure the rsi:<SID> group exists and collect its ID.
-	newOrgGroupIDs := make([]string, 0, len(orgs))
 	for _, org := range orgs {
 		if org.SID == "" {
 			continue
@@ -120,15 +140,22 @@ func (s *Server) syncOrgGroupsToPocketID(ctx context.Context, userID string, org
 			slog.WarnContext(ctx, "sync org groups: ensure group", "group", groupName, "err", err)
 			continue
 		}
-		newOrgGroupIDs = append(newOrgGroupIDs, g.ID)
+		managedGroupIDs = append(managedGroupIDs, g.ID)
 	}
 
-	// Merge: preserved non-rsi groups + new rsi groups.
-	merged := append(keepIDs, newOrgGroupIDs...)
+	// Merge: preserved non-rsi groups + managed RSI groups.
+	merged := append(keepIDs, managedGroupIDs...)
 
 	if err := s.pid.SetUserGroups(ctx, userID, merged); err != nil {
 		slog.WarnContext(ctx, "sync org groups: set user groups", "user_id", userID, "err", err)
 	}
+}
+
+func isRSIStaffCandidate(handle string, profile *rsi.Profile) bool {
+	if profile == nil || !profile.HasDeveloperBadge {
+		return false
+	}
+	return strings.HasSuffix(strings.ToUpper(strings.TrimSpace(handle)), "-CIG")
 }
 
 // cacheOrgLogo downloads logoURL and saves it to orgLogoDir/<SID>.png.
