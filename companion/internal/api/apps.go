@@ -719,33 +719,26 @@ func (s *Server) handleUploadLogo(w http.ResponseWriter, r *http.Request) {
 
 // --- GET /api/oidc/clients/{id}/logo (public proxy) ---
 
-// handleOIDCClientLogo proxies logo images from Pocket ID so that the browser
-// can load them from the same origin as the SvelteKit frontend.
+// handleOIDCClientLogo proxies the OIDC client logo from Pocket ID's internal
+// service so the browser fetches it from the same origin as the frontend.
+// This avoids cross-origin issues and insulates the browser from Pocket ID's
+// internal URL structure.
 func (s *Server) handleOIDCClientLogo(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
-		writeError(w, http.StatusBadRequest, "missing client id")
+		http.NotFound(w, r)
 		return
 	}
 
-	data, ct, err := s.pid.GetOIDCClientLogo(r.Context(), id)
+	found, err := s.pid.GetOIDCClientLogo(r.Context(), id, w)
 	if err != nil {
-		slog.ErrorContext(r.Context(), "fetch logo failed", "client_id", id, "err", err)
-		w.WriteHeader(http.StatusBadGateway)
+		slog.ErrorContext(r.Context(), "proxy logo failed", "client_id", id, "err", err)
+		// Headers may already be sent; nothing more we can do.
 		return
 	}
-	if data == nil {
-		w.WriteHeader(http.StatusNotFound)
-		return
+	if !found {
+		http.NotFound(w, r)
 	}
-
-	if ct == "" {
-		ct = "application/octet-stream"
-	}
-	w.Header().Set("Content-Type", ct)
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
 }
 
 // --- GET /api/admin/apps ---

@@ -560,34 +560,40 @@ func (c *Client) SetOIDCClientLogo(ctx context.Context, id string, imageData []b
 	return nil
 }
 
-// GetOIDCClientLogo fetches the logo image for an OIDC client.
-// Returns the raw image bytes and the Content-Type header value.
-func (c *Client) GetOIDCClientLogo(ctx context.Context, id string) ([]byte, string, error) {
+// GetOIDCClientLogo fetches the logo image for an OIDC client from the internal
+// Pocket ID service and streams it back to the caller via w. Uses the internal
+// Docker network URL (not the public OIDC issuer URL) so it never goes through
+// Caddy. Returns false (no logo) when Pocket ID returns 404.
+func (c *Client) GetOIDCClientLogo(ctx context.Context, id string, w http.ResponseWriter) (bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
 		c.baseURL+"/api/oidc/clients/"+url.PathEscape(id)+"/logo", nil)
 	if err != nil {
-		return nil, "", fmt.Errorf("build request: %w", err)
+		return false, fmt.Errorf("build request: %w", err)
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, "", fmt.Errorf("http: %w", err)
+		return false, fmt.Errorf("http: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, "", nil
+		return false, nil
 	}
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, "", fmt.Errorf("pocket id responded %d: %s", resp.StatusCode, sanitizeBody(body))
+		return false, fmt.Errorf("pocket id responded %d: %s", resp.StatusCode, sanitizeBody(body))
 	}
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20)) // 2 MB cap
-	if err != nil {
-		return nil, "", fmt.Errorf("read body: %w", err)
+	ct := resp.Header.Get("Content-Type")
+	if ct == "" {
+		ct = "application/octet-stream"
 	}
-	return data, resp.Header.Get("Content-Type"), nil
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.WriteHeader(http.StatusOK)
+	_, err = io.Copy(w, io.LimitReader(resp.Body, 2<<20)) // 2 MB cap
+	return true, err
 }
 
 // DeleteUser permanently deletes a user from Pocket ID.
