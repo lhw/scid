@@ -521,12 +521,23 @@ func (c *Client) SetOIDCClientAllowedGroups(ctx context.Context, id string, grou
 	return &client, nil
 }
 
+// contentTypeExt maps MIME types to file extensions for logo uploads.
+var contentTypeExt = map[string]string{
+	"image/png":  "logo.png",
+	"image/jpeg": "logo.jpg",
+	"image/webp": "logo.webp",
+}
+
 // SetOIDCClientLogo uploads a logo image for an OIDC client.
 // imageData must be PNG, JPEG, or WebP; maxiumum 2 MB as enforced by Pocket ID.
 func (c *Client) SetOIDCClientLogo(ctx context.Context, id string, imageData []byte, contentType string) error {
+	filename := contentTypeExt[contentType]
+	if filename == "" {
+		filename = "logo.png"
+	}
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
-	part, err := mw.CreateFormFile("file", "logo")
+	part, err := mw.CreateFormFile("file", filename)
 	if err != nil {
 		return fmt.Errorf("create form file: %w", err)
 	}
