@@ -116,6 +116,8 @@ func (s *Server) buildRouter() *chi.Mux {
 	r.Post("/api/auth/logout", s.handleAuthLogout)
 	// Org logo — serves cached org logos by SID (public, browser-cached).
 	r.Get("/api/orgs/{sid}/logo", s.handleOrgLogo)
+	// OIDC client logo — proxy from Pocket ID so the browser loads it same-origin.
+	r.Get("/api/oidc/clients/{id}/logo", s.handleOIDCClientLogo)
 	// Public app directory — lists approved apps that have opted into the directory.
 	r.Get("/api/apps/directory", s.handleListDirectoryApps)
 

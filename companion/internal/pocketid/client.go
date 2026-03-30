@@ -560,6 +560,36 @@ func (c *Client) SetOIDCClientLogo(ctx context.Context, id string, imageData []b
 	return nil
 }
 
+// GetOIDCClientLogo fetches the logo image for an OIDC client.
+// Returns the raw image bytes and the Content-Type header value.
+func (c *Client) GetOIDCClientLogo(ctx context.Context, id string) ([]byte, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.baseURL+"/api/oidc/clients/"+url.PathEscape(id)+"/logo", nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("build request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, "", nil
+	}
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, "", fmt.Errorf("pocket id responded %d: %s", resp.StatusCode, sanitizeBody(body))
+	}
+
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20)) // 2 MB cap
+	if err != nil {
+		return nil, "", fmt.Errorf("read body: %w", err)
+	}
+	return data, resp.Header.Get("Content-Type"), nil
+}
+
 // DeleteUser permanently deletes a user from Pocket ID.
 func (c *Client) DeleteUser(ctx context.Context, userID string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete,
