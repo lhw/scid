@@ -23,8 +23,8 @@ services:
   # ---------------------------------------------------------------------------
   companion:
     build:
-      context: ./companion
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: companion/Dockerfile
     restart: unless-stopped
     environment:
       LISTEN_ADDR: ":8080"
