@@ -38,30 +38,27 @@ COPY companion/ ./
 COPY --from=frontend-builder /frontend/build ./internal/frontend/dist/
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /scid ./cmd/scid
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /healthcheck ./cmd/healthcheck
+
+# Pre-create the data directory owned by the distroless nonroot uid (65532).
+RUN mkdir -p /data && chown 65532:65532 /data
 
 # ---------------------------------------------------------------------------
-# Stage 3: Minimal runtime image
+# Stage 3: Distroless runtime image (no shell, no package manager)
+# gcr.io/distroless/static-debian13 bundles ca-certificates and tzdata only.
 # ---------------------------------------------------------------------------
-FROM alpine:3.20 AS runner
+FROM gcr.io/distroless/static-debian13:nonroot AS runner
 
-RUN apk add --no-cache ca-certificates tzdata curl
-
-# Run as non-root
-RUN addgroup -S scid && adduser -S scid -G scid
-
-WORKDIR /app
-
-COPY --from=go-builder /scid /app/scid
+COPY --from=go-builder /scid /scid
+COPY --from=go-builder /healthcheck /healthcheck
+COPY --from=go-builder --chown=65532:65532 /data /data
 
 # Data volume for companion runtime data and cached logos
 VOLUME ["/data"]
-RUN mkdir -p /data && chown scid:scid /data
-
-USER scid
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl -sf http://localhost:8080/api/health || exit 1
+    CMD ["/healthcheck"]
 
-ENTRYPOINT ["/app/scid"]
+ENTRYPOINT ["/scid"]
