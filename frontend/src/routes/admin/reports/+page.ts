@@ -1,10 +1,5 @@
-import { getVerifyStatus } from "$lib/utils/api";
+import { redirect } from '@sveltejs/kit';
 
-export async function load({ fetch }) {
-  try {
-    const status = await getVerifyStatus(fetch);
-    return { status };
-  } catch {
-    return { status: null };
-  }
+export function load() {
+  redirect(307, '/admin?tab=reports');
 }

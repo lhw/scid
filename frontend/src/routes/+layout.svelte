@@ -67,9 +67,7 @@
           <a href="/discover" class="rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs font-medium text-[#e2e8f0]/60 transition-colors hover:border-[#00d4ff]/40 hover:text-[#00d4ff]">Discover</a>
           <a href="/apps" class="rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs font-medium text-[#e2e8f0]/60 transition-colors hover:border-[#00d4ff]/40 hover:text-[#00d4ff]">My Apps</a>
           {#if isAdmin}
-            <a href="/admin/apps" class="rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs font-medium text-[#e2e8f0]/60 transition-colors hover:border-[#ffd700]/40 hover:text-[#ffd700]">Apps</a>
-            <a href="/admin/users" class="rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs font-medium text-[#e2e8f0]/60 transition-colors hover:border-[#ffd700]/40 hover:text-[#ffd700]">Users</a>
-            <a href="/admin/reports" class="rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs font-medium text-[#e2e8f0]/60 transition-colors hover:border-[#ffd700]/40 hover:text-[#ffd700]">Reports</a>
+            <a href="/admin" class="rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs font-medium text-[#e2e8f0]/60 transition-colors hover:border-[#ffd700]/40 hover:text-[#ffd700]">Admin</a>
           {/if}
           <a href="{PUBLIC_POCKET_ID_URL}" class="rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs font-medium text-[#e2e8f0]/60 transition-colors hover:border-[#00d4ff]/40 hover:text-[#00d4ff]">Manage Account</a>
           <button type="button" onclick={handleSignOut} class="rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs font-medium text-[#e2e8f0]/40 transition-colors hover:border-[#e2e8f0]/20 hover:text-[#e2e8f0]/70">Sign Out</button>
@@ -113,9 +111,7 @@
           {#if isAuthenticated}
             <a href="/apps" onclick={() => (menuOpen = false)} class="rounded-lg px-3 py-2.5 text-sm font-medium text-[#e2e8f0]/70 transition-colors hover:bg-[#1e3a5f]/50 hover:text-[#00d4ff]">My Apps</a>
             {#if isAdmin}
-              <a href="/admin/apps" onclick={() => (menuOpen = false)} class="rounded-lg px-3 py-2.5 text-sm font-medium text-[#e2e8f0]/70 transition-colors hover:bg-[#1e3a5f]/50 hover:text-[#ffd700]">Admin — Apps</a>
-              <a href="/admin/users" onclick={() => (menuOpen = false)} class="rounded-lg px-3 py-2.5 text-sm font-medium text-[#e2e8f0]/70 transition-colors hover:bg-[#1e3a5f]/50 hover:text-[#ffd700]">Admin — Users</a>
-              <a href="/admin/reports" onclick={() => (menuOpen = false)} class="rounded-lg px-3 py-2.5 text-sm font-medium text-[#e2e8f0]/70 transition-colors hover:bg-[#1e3a5f]/50 hover:text-[#ffd700]">Admin — Reports</a>
+              <a href="/admin" onclick={() => (menuOpen = false)} class="rounded-lg px-3 py-2.5 text-sm font-medium text-[#e2e8f0]/70 transition-colors hover:bg-[#1e3a5f]/50 hover:text-[#ffd700]">Admin</a>
             {/if}
             <a href="{PUBLIC_POCKET_ID_URL}" onclick={() => (menuOpen = false)} class="rounded-lg px-3 py-2.5 text-sm font-medium text-[#e2e8f0]/70 transition-colors hover:bg-[#1e3a5f]/50 hover:text-[#00d4ff]">Manage Account</a>
             <div class="my-1 border-t border-[#1e3a5f]"></div>
