@@ -70,6 +70,30 @@ CREATE TABLE IF NOT EXISTS verified_handles (
     pocket_id_user_id TEXT NOT NULL UNIQUE,
 	verified_at TEXT NOT NULL
 );
+
+-- blocked_handles prevents a specific RSI handle from being re-verified by
+-- any SCID account.  Used by admins to ban handles after removing a user.
+CREATE TABLE IF NOT EXISTS blocked_handles (
+    rsi_handle TEXT NOT NULL PRIMARY KEY,
+    blocked_at TEXT NOT NULL,
+    blocked_by TEXT NOT NULL DEFAULT '',
+    reason TEXT NOT NULL DEFAULT ''
+);
+
+-- reports holds user/org profile reports submitted via the public report form.
+-- type: 'user' | 'org'
+-- status: 'pending' | 'reviewed' | 'dismissed'
+CREATE TABLE IF NOT EXISTS reports (
+    id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    target TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    reporter_ip TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    reviewed_by TEXT NOT NULL DEFAULT '',
+    reviewed_at TEXT NOT NULL DEFAULT ''
+);
 `
 
 const sqliteSessionSchema = `
@@ -97,6 +121,7 @@ ALTER TABLE app_registrations ADD COLUMN status TEXT NOT NULL DEFAULT 'approved'
 ALTER TABLE app_registrations ADD COLUMN rejection_reason TEXT NOT NULL DEFAULT '';
 ALTER TABLE app_registrations ADD COLUMN listed INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE app_registrations ADD COLUMN description TEXT NOT NULL DEFAULT '';
+ALTER TABLE org_cache ADD COLUMN logo_blocked INTEGER NOT NULL DEFAULT 0;
 `
 
 // VerificationToken represents a row in the verification_tokens table.
@@ -524,10 +549,11 @@ func scanAppRegistrationRow(rows *sql.Rows) (*AppRegistration, error) {
 
 // OrgCacheEntry represents a row in the org_cache table.
 type OrgCacheEntry struct {
-	SID       string
-	Name      string
-	LogoPath  string
-	FetchedAt time.Time
+	SID         string
+	Name        string
+	LogoPath    string
+	LogoBlocked bool
+	FetchedAt   time.Time
 }
 
 // UserOrg represents a user's membership in an RSI org.
@@ -557,16 +583,18 @@ ON CONFLICT(sid) DO UPDATE SET
 
 // GetOrgCache retrieves a cached org entry by SID. Returns ErrNotFound if missing.
 func (s *Store) GetOrgCache(ctx context.Context, sid string) (*OrgCacheEntry, error) {
-	const q = `SELECT sid, name, logo_path, fetched_at FROM org_cache WHERE sid = ?`
+	const q = `SELECT sid, name, logo_path, COALESCE(logo_blocked,0), fetched_at FROM org_cache WHERE sid = ?`
 	var e OrgCacheEntry
+	var logoBlocked int
 	var fetchedAt string
-	err := s.queryRowContext(ctx, q, sid).Scan(&e.SID, &e.Name, &e.LogoPath, &fetchedAt)
+	err := s.queryRowContext(ctx, q, sid).Scan(&e.SID, &e.Name, &e.LogoPath, &logoBlocked, &fetchedAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get org cache: %w", err)
 	}
+	e.LogoBlocked = logoBlocked == 1
 	e.FetchedAt, _ = parseTime(fetchedAt)
 	return &e, nil
 }
@@ -715,4 +743,255 @@ func (s *Store) Ping(ctx context.Context) error {
 	row := s.queryRowContext(ctx, "SELECT 1")
 	var n int
 	return row.Scan(&n)
+}
+
+// ---- Verified handles (admin listing) ----
+
+// VerifiedHandleEntry is a row from verified_handles with the handle and user ID.
+type VerifiedHandleEntry struct {
+	RSIHandle      string
+	PocketIDUserID string
+	VerifiedAt     time.Time
+}
+
+// ListVerifiedHandles returns all verified handle entries ordered by verified_at desc.
+func (s *Store) ListVerifiedHandles(ctx context.Context) ([]VerifiedHandleEntry, error) {
+	const q = `SELECT rsi_handle, pocket_id_user_id, verified_at FROM verified_handles ORDER BY verified_at DESC`
+	rows, err := s.queryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("list verified handles: %w", err)
+	}
+	defer rows.Close()
+
+	var result []VerifiedHandleEntry
+	for rows.Next() {
+		var e VerifiedHandleEntry
+		var verifiedAt string
+		if err := rows.Scan(&e.RSIHandle, &e.PocketIDUserID, &verifiedAt); err != nil {
+			return nil, fmt.Errorf("scan verified handle: %w", err)
+		}
+		e.VerifiedAt, _ = parseTime(verifiedAt)
+		result = append(result, e)
+	}
+	return result, rows.Err()
+}
+
+// GetVerifiedHandleByUserID retrieves the verified handle for a given Pocket ID user.
+func (s *Store) GetVerifiedHandleByUserID(ctx context.Context, userID string) (*VerifiedHandleEntry, error) {
+	const q = `SELECT rsi_handle, pocket_id_user_id, verified_at FROM verified_handles WHERE pocket_id_user_id = ?`
+	var e VerifiedHandleEntry
+	var verifiedAt string
+	err := s.queryRowContext(ctx, q, userID).Scan(&e.RSIHandle, &e.PocketIDUserID, &verifiedAt)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get verified handle: %w", err)
+	}
+	e.VerifiedAt, _ = parseTime(verifiedAt)
+	return &e, nil
+}
+
+// DeleteUserData removes all SCID-side data for a user: verified handle, pending
+// token, org memberships, and org sync entry. Call this when deleting an account.
+func (s *Store) DeleteUserData(ctx context.Context, userID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	for _, q := range []string{
+		`DELETE FROM verified_handles WHERE pocket_id_user_id = ?`,
+		`DELETE FROM verification_tokens WHERE pocket_id_user_id = ?`,
+		`DELETE FROM user_orgs WHERE pocket_id_user_id = ?`,
+		`DELETE FROM user_org_sync WHERE pocket_id_user_id = ?`,
+	} {
+		if _, err := tx.ExecContext(ctx, s.rebind(q), userID); err != nil {
+			return fmt.Errorf("delete user data: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// ---- Blocked handles ----
+
+// BlockedHandle represents a row in the blocked_handles table.
+type BlockedHandle struct {
+	RSIHandle string
+	BlockedAt time.Time
+	BlockedBy string
+	Reason    string
+}
+
+// BlockHandle adds a handle to the blocklist preventing future verification.
+func (s *Store) BlockHandle(ctx context.Context, handle, blockedBy, reason string) error {
+	const q = `
+INSERT INTO blocked_handles (rsi_handle, blocked_at, blocked_by, reason)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(rsi_handle) DO UPDATE SET blocked_by = excluded.blocked_by, reason = excluded.reason`
+	_, err := s.execContext(ctx, q, handle, time.Now().UTC().Format(time.RFC3339), blockedBy, reason)
+	if err != nil {
+		return fmt.Errorf("block handle: %w", err)
+	}
+	return nil
+}
+
+// UnblockHandle removes a handle from the blocklist.
+func (s *Store) UnblockHandle(ctx context.Context, handle string) error {
+	const q = `DELETE FROM blocked_handles WHERE rsi_handle = ?`
+	_, err := s.execContext(ctx, q, handle)
+	if err != nil {
+		return fmt.Errorf("unblock handle: %w", err)
+	}
+	return nil
+}
+
+// IsHandleBlocked reports whether the given RSI handle is on the blocklist.
+func (s *Store) IsHandleBlocked(ctx context.Context, handle string) (bool, error) {
+	const q = `SELECT COUNT(*) FROM blocked_handles WHERE rsi_handle = ?`
+	var count int
+	if err := s.queryRowContext(ctx, q, handle).Scan(&count); err != nil {
+		return false, fmt.Errorf("is handle blocked: %w", err)
+	}
+	return count > 0, nil
+}
+
+// ListBlockedHandles returns all blocked handle entries.
+func (s *Store) ListBlockedHandles(ctx context.Context) ([]BlockedHandle, error) {
+	const q = `SELECT rsi_handle, blocked_at, blocked_by, reason FROM blocked_handles ORDER BY blocked_at DESC`
+	rows, err := s.queryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("list blocked handles: %w", err)
+	}
+	defer rows.Close()
+
+	var result []BlockedHandle
+	for rows.Next() {
+		var b BlockedHandle
+		var blockedAt string
+		if err := rows.Scan(&b.RSIHandle, &blockedAt, &b.BlockedBy, &b.Reason); err != nil {
+			return nil, fmt.Errorf("scan blocked handle: %w", err)
+		}
+		b.BlockedAt, _ = parseTime(blockedAt)
+		result = append(result, b)
+	}
+	return result, rows.Err()
+}
+
+// ---- Org cache admin ----
+
+// ListOrgCache returns all org cache entries ordered by SID.
+func (s *Store) ListOrgCache(ctx context.Context) ([]OrgCacheEntry, error) {
+	const q = `SELECT sid, name, logo_path, COALESCE(logo_blocked,0), fetched_at FROM org_cache ORDER BY sid ASC`
+	rows, err := s.queryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("list org cache: %w", err)
+	}
+	defer rows.Close()
+
+	var result []OrgCacheEntry
+	for rows.Next() {
+		var e OrgCacheEntry
+		var logoBlocked int
+		var fetchedAt string
+		if err := rows.Scan(&e.SID, &e.Name, &e.LogoPath, &logoBlocked, &fetchedAt); err != nil {
+			return nil, fmt.Errorf("scan org cache: %w", err)
+		}
+		e.LogoBlocked = logoBlocked == 1
+		e.FetchedAt, _ = parseTime(fetchedAt)
+		result = append(result, e)
+	}
+	return result, rows.Err()
+}
+
+// SetOrgLogoBlocked sets or clears the logo_blocked flag for an org.
+func (s *Store) SetOrgLogoBlocked(ctx context.Context, sid string, blocked bool) error {
+	flag := 0
+	if blocked {
+		flag = 1
+	}
+	const q = `UPDATE org_cache SET logo_blocked = ? WHERE sid = ?`
+	if _, err := s.execContext(ctx, q, flag, sid); err != nil {
+		return fmt.Errorf("set org logo blocked: %w", err)
+	}
+	return nil
+}
+
+// ---- Reports ----
+
+// Report represents a profile report submitted via the public report form.
+type Report struct {
+	ID         string
+	Type       string // "user" | "org"
+	Target     string // RSI handle or org SID
+	Reason     string
+	ReporterIP string
+	CreatedAt  time.Time
+	Status     string // "pending" | "reviewed" | "dismissed"
+	ReviewedBy string
+	ReviewedAt time.Time
+}
+
+// CreateReport inserts a new report.
+func (s *Store) CreateReport(ctx context.Context, r *Report) error {
+	const q = `
+INSERT INTO reports (id, type, target, reason, reporter_ip, created_at, status, reviewed_by, reviewed_at)
+VALUES (?, ?, ?, ?, ?, ?, 'pending', '', '')`
+	_, err := s.execContext(ctx, q, r.ID, r.Type, r.Target, r.Reason, r.ReporterIP, r.CreatedAt.UTC().Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("create report: %w", err)
+	}
+	return nil
+}
+
+// ListReports returns reports ordered by created_at DESC. Pass status="" to list all.
+func (s *Store) ListReports(ctx context.Context, status string) ([]Report, error) {
+	var rows *sql.Rows
+	var err error
+	if status != "" {
+		const q = `SELECT id, type, target, reason, reporter_ip, created_at, status, reviewed_by, reviewed_at FROM reports WHERE status = ? ORDER BY created_at DESC`
+		rows, err = s.queryContext(ctx, q, status)
+	} else {
+		const q = `SELECT id, type, target, reason, reporter_ip, created_at, status, reviewed_by, reviewed_at FROM reports ORDER BY created_at DESC`
+		rows, err = s.queryContext(ctx, q)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list reports: %w", err)
+	}
+	defer rows.Close()
+
+	var result []Report
+	for rows.Next() {
+		r, err := scanReportRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
+// UpdateReportStatus updates a report's status and records who reviewed it.
+func (s *Store) UpdateReportStatus(ctx context.Context, id, status, reviewedBy string) error {
+	const q = `UPDATE reports SET status = ?, reviewed_by = ?, reviewed_at = ? WHERE id = ?`
+	_, err := s.execContext(ctx, q, status, reviewedBy, time.Now().UTC().Format(time.RFC3339), id)
+	if err != nil {
+		return fmt.Errorf("update report status: %w", err)
+	}
+	return nil
+}
+
+func scanReportRow(rows *sql.Rows) (Report, error) {
+	var r Report
+	var createdAt, reviewedAt string
+	err := rows.Scan(&r.ID, &r.Type, &r.Target, &r.Reason, &r.ReporterIP, &createdAt, &r.Status, &r.ReviewedBy, &reviewedAt)
+	if err != nil {
+		return Report{}, fmt.Errorf("scan report: %w", err)
+	}
+	r.CreatedAt, _ = parseTime(createdAt)
+	if reviewedAt != "" {
+		r.ReviewedAt, _ = parseTime(reviewedAt)
+	}
+	return r, nil
 }

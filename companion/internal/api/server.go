@@ -120,6 +120,8 @@ func (s *Server) buildRouter() *chi.Mux {
 	r.Get("/api/oidc/clients/{id}/logo", s.handleOIDCClientLogo)
 	// Public app directory — lists approved apps that have opted into the directory.
 	r.Get("/api/apps/directory", s.handleListDirectoryApps)
+	// Public report form — accepts abuse reports for users/orgs (Turnstile required in prod).
+	r.With(s.publicRateLimitMiddleware("report", 5, 10*time.Minute)).Post("/api/report", s.handleSubmitReport)
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.bearerAuthMiddleware)
@@ -140,6 +142,21 @@ func (s *Server) buildRouter() *chi.Mux {
 			r.Get("/apps", s.handleListAdminApps)
 			r.Post("/apps/{id}/approve", s.handleApproveApp)
 			r.Post("/apps/{id}/reject", s.handleRejectApp)
+			// User management
+			r.Get("/users", s.handleListAdminUsers)
+			r.Delete("/users/{id}", s.handleDeleteAdminUser)
+			// Handle blocklist
+			r.Get("/handles/blocked", s.handleListBlockedHandles)
+			r.Post("/handles/block", s.handleBlockHandle)
+			r.Delete("/handles/{handle}", s.handleUnblockHandle)
+			// Org logo management
+			r.Get("/orgs", s.handleListAdminOrgs)
+			r.Post("/orgs/{sid}/block-logo", s.handleBlockOrgLogo)
+			r.Delete("/orgs/{sid}/block-logo", s.handleUnblockOrgLogo)
+			// Report review queue
+			r.Get("/reports", s.handleListAdminReports)
+			r.Post("/reports/{id}/review", s.handleReviewReport)
+			r.Post("/reports/{id}/dismiss", s.handleDismissReport)
 		})
 	})
 

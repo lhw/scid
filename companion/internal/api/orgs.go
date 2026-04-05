@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -49,10 +50,12 @@ func (s *Server) syncUserOrgs(ctx context.Context, userID, handle string, profil
 
 		// Cache org metadata (name + logo) if stale or missing.
 		cached, _ := s.store.GetOrgCache(ctx, org.SID)
-		if cached == nil || time.Since(cached.FetchedAt) > orgCacheTTL || (cached.LogoPath == "" && org.LogoURL != "") {
+		if cached == nil || time.Since(cached.FetchedAt) > orgCacheTTL || (cached.LogoPath == "" && org.LogoURL != "" && (cached == nil || !cached.LogoBlocked)) {
 			logoPath := ""
-			if org.LogoURL != "" {
+			if org.LogoURL != "" && (cached == nil || !cached.LogoBlocked) {
 				logoPath = cacheOrgLogo(ctx, org.SID, org.LogoURL)
+			} else if cached != nil {
+				logoPath = cached.LogoPath // keep filename if re-sync for other reasons
 			}
 			name := org.Name
 			if name == "" && cached != nil {
@@ -233,6 +236,9 @@ func cacheOrgLogo(ctx context.Context, sid, logoURL string) string {
 		slog.WarnContext(ctx, "cache org logo: rename", "sid", sid, "err", err)
 		return ""
 	}
+	// Ensure the file is world-readable so http.ServeFile can open it regardless
+	// of the process umask.
+	_ = os.Chmod(destPath, 0644)
 	tmpName = "" // prevent deferred cleanup
 	return destPath
 }
@@ -247,8 +253,14 @@ func (s *Server) handleOrgLogo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cached, err := s.store.GetOrgCache(r.Context(), sid)
-	if err != nil || cached == nil || cached.LogoPath == "" {
+	if err != nil || cached == nil {
 		http.NotFound(w, r)
+		return
+	}
+
+	// If the logo is administratively blocked, return a generic placeholder SVG.
+	if cached.LogoBlocked || cached.LogoPath == "" {
+		servePlaceholderLogo(w, r, sid)
 		return
 	}
 
@@ -259,8 +271,49 @@ func (s *Server) handleOrgLogo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Open the file manually and serve via http.ServeContent to avoid http.ServeFile's
+	// containsDotDot check on r.URL.Path (which could return 403 on some paths).
+	f, err := os.Open(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.NotFound(w, r)
+		} else {
+			slog.WarnContext(r.Context(), "org logo: open file", "sid", sid, "path", abs, "err", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}
+		return
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		slog.WarnContext(r.Context(), "org logo: stat file", "sid", sid, "err", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	ct := mime.TypeByExtension(filepath.Ext(abs))
+	if ct == "" {
+		ct = "image/png"
+	}
 	w.Header().Set("Cache-Control", "public, max-age=86400")
-	http.ServeFile(w, r, abs)
+	w.Header().Set("Content-Type", ct)
+	http.ServeContent(w, r, fi.Name(), fi.ModTime(), f)
+}
+
+// orgPlaceholderSVG is a minimal generic org badge served when a logo is blocked
+// or not yet cached.
+const orgPlaceholderSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="8" fill="#1e3a5f"/>
+  <text x="32" y="42" font-family="sans-serif" font-size="28" font-weight="bold"
+        fill="#00d4ff" text-anchor="middle">?</text>
+</svg>`
+
+func servePlaceholderLogo(w http.ResponseWriter, r *http.Request, _ string) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(orgPlaceholderSVG))
 }
 
 // isValidSID checks that a SID is safe to use as a DB key and filename.

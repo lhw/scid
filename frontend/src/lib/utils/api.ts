@@ -235,3 +235,134 @@ export async function adminRejectApp(id: string, reason?: string): Promise<AppRe
   return res.json();
 }
 
+// ---- Admin: User management ----
+
+export interface AdminUserEntry {
+  user_id: string;
+  handle: string;
+  verified_at: string;
+  handle_blocked: boolean;
+}
+
+export interface AdminBlockedHandle {
+  handle: string;
+  blocked_at: string;
+  blocked_by: string;
+  reason: string;
+}
+
+export async function adminListUsers(): Promise<AdminUserEntry[]> {
+  const res = await fetch("/api/admin/users");
+  await throwIfError(res);
+  return res.json();
+}
+
+export async function adminDeleteUser(id: string, blockHandle: boolean, reason?: string): Promise<void> {
+  const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ block_handle: blockHandle, reason: reason ?? "" }),
+  });
+  await throwIfError(res);
+}
+
+export async function adminListBlockedHandles(): Promise<AdminBlockedHandle[]> {
+  const res = await fetch("/api/admin/handles/blocked");
+  await throwIfError(res);
+  return res.json();
+}
+
+export async function adminBlockHandle(handle: string, reason?: string): Promise<void> {
+  const res = await fetch("/api/admin/handles/block", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ handle, reason: reason ?? "" }),
+  });
+  await throwIfError(res);
+}
+
+export async function adminUnblockHandle(handle: string): Promise<void> {
+  const res = await fetch(`/api/admin/handles/${encodeURIComponent(handle)}`, {
+    method: "DELETE",
+  });
+  await throwIfError(res);
+}
+
+// ---- Admin: Org logo management ----
+
+export interface AdminOrgEntry {
+  sid: string;
+  name: string;
+  has_logo: boolean;
+  logo_blocked: boolean;
+  fetched_at: string;
+}
+
+export async function adminListOrgs(): Promise<AdminOrgEntry[]> {
+  const res = await fetch("/api/admin/orgs");
+  await throwIfError(res);
+  return res.json();
+}
+
+export async function adminBlockOrgLogo(sid: string): Promise<void> {
+  const res = await fetch(`/api/admin/orgs/${encodeURIComponent(sid)}/block-logo`, {
+    method: "POST",
+  });
+  await throwIfError(res);
+}
+
+export async function adminUnblockOrgLogo(sid: string): Promise<void> {
+  const res = await fetch(`/api/admin/orgs/${encodeURIComponent(sid)}/block-logo`, {
+    method: "DELETE",
+  });
+  await throwIfError(res);
+}
+
+// ---- Admin: Report review queue ----
+
+export interface AdminReport {
+  id: string;
+  type: "user" | "org";
+  target: string;
+  reason: string;
+  reporter_ip: string;
+  created_at: string;
+  status: "pending" | "reviewed" | "dismissed";
+  reviewed_by?: string;
+  reviewed_at?: string;
+}
+
+export async function adminListReports(status?: string): Promise<AdminReport[]> {
+  const url = status ? `/api/admin/reports?status=${encodeURIComponent(status)}` : "/api/admin/reports";
+  const res = await fetch(url);
+  await throwIfError(res);
+  return res.json();
+}
+
+export async function adminReviewReport(id: string): Promise<void> {
+  const res = await fetch(`/api/admin/reports/${encodeURIComponent(id)}/review`, { method: "POST" });
+  await throwIfError(res);
+}
+
+export async function adminDismissReport(id: string): Promise<void> {
+  const res = await fetch(`/api/admin/reports/${encodeURIComponent(id)}/dismiss`, { method: "POST" });
+  await throwIfError(res);
+}
+
+// ---- Public: Report form ----
+
+export async function submitReport(
+  type: "user" | "org",
+  target: string,
+  reason: string,
+  turnstileToken?: string,
+): Promise<{ id: string }> {
+  const res = await fetch("/api/report", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type, target, reason, turnstile_token: turnstileToken ?? "" }),
+  });
+  await throwIfError(res);
+  return res.json();
+}
+

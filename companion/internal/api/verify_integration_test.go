@@ -491,3 +491,20 @@ func TestVerifyRefresh_PreservesUnmanagedCustomClaims(t *testing.T) {
 	}
 	t.Fatal("unmanaged custom claim was lost during refresh")
 }
+
+// TestVerifyStart_BlockedHandle verifies that a blocked RSI handle cannot be
+// used to start the verification flow.
+func TestVerifyStart_BlockedHandle(t *testing.T) {
+	env := newTestEnv(t, false)
+	env.addUser("tok-dave", "user-dave", "dave")
+
+	// Block the handle directly via the store before attempting verification.
+	if err := env.st.BlockHandle(t.Context(), "BlockedRSIHandle", "admin", "spam"); err != nil {
+		t.Fatalf("block handle: %v", err)
+	}
+
+	resp := env.do(http.MethodPost, "/api/verify/start", "tok-dave",
+map[string]string{"handle": "BlockedRSIHandle"})
+	env.mustStatus(resp, http.StatusForbidden)
+	env.drain(resp)
+}

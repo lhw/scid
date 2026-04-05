@@ -65,6 +65,18 @@ func (s *Server) handleVerifyStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if the handle has been administratively blocked.
+	blocked, err := s.store.IsHandleBlocked(r.Context(), req.Handle)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "handle block check failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if blocked {
+		writeError(w, http.StatusForbidden, "this RSI handle is not eligible for verification")
+		return
+	}
+
 	linked, err := s.store.HandleIsLinkedToOtherUser(r.Context(), req.Handle, user.ID)
 	if err != nil {
 		slog.ErrorContext(r.Context(), "handle uniqueness check failed", "err", err)
