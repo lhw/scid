@@ -92,6 +92,7 @@ func (s *Server) buildRouter() *chi.Mux {
 	r.Use(middleware.Recoverer)
 	r.Use(s.sessions.LoadAndSave)
 	r.Use(prometheusMiddleware)
+	r.Use(securityHeadersMiddleware)
 
 	// CORS — origins are configured via CORS_ALLOWED_ORIGINS (see config).
 	r.Use(cors.Handler(cors.Options{
@@ -234,7 +235,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	code := http.StatusOK
 
 	if err := s.store.Ping(ctx); err != nil {
-		deps["database"] = depStatus{Status: "error", Message: err.Error()}
+		slog.ErrorContext(ctx, "health: database ping failed", "err", err)
+		deps["database"] = depStatus{Status: "error"}
 		overall = "degraded"
 		code = http.StatusServiceUnavailable
 	} else {
@@ -244,7 +246,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	// Pocket ID being temporarily unreachable is reported as degraded (not 503)
 	// so that companion health checks don't flap during Pocket ID restarts.
 	if err := s.auth.Ping(ctx); err != nil {
-		deps["pocket_id"] = depStatus{Status: "error", Message: err.Error()}
+		slog.WarnContext(ctx, "health: pocket id ping failed", "err", err)
+		deps["pocket_id"] = depStatus{Status: "error"}
 		if overall == "ok" {
 			overall = "degraded"
 		}
@@ -367,4 +370,14 @@ func forwardedIP(r *http.Request) string {
 		}
 	}
 	return ""
+}
+
+// securityHeadersMiddleware adds defence-in-depth HTTP security headers.
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		next.ServeHTTP(w, r)
+	})
 }

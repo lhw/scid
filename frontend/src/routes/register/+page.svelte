@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { getSignupToken } from '$lib/utils/api.js';
+  import Panel from '$lib/components/Panel.svelte';
   import { PUBLIC_POCKET_ID_URL, PUBLIC_TURNSTILE_SITE_KEY } from '$lib/utils/public-env';
   import { UserPlus, LoaderCircle, ShieldCheck, LogIn } from '@lucide/svelte';
 
@@ -91,7 +92,7 @@
       {/each}
     </ol>
 
-    <div class="rounded-xl border border-[#1e3a5f] bg-[#111827]/80 p-8 backdrop-blur-sm">
+    <Panel class="rounded-xl bg-[#111827]/80 p-8 backdrop-blur-sm">
       {#if PUBLIC_TURNSTILE_SITE_KEY}
         <!-- Security check -->
         <div class="mb-5">
@@ -139,6 +140,6 @@
           Sign in
         </a>
       </p>
-    </div>
+    </Panel>
   </div>
 </div>

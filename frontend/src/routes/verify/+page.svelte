@@ -3,7 +3,10 @@
   import { untrack } from 'svelte';
   import { startVerify, confirmVerify } from '$lib/utils/api.js';
   import { login } from '$lib/utils/auth.js';
-  import { CircleCheckBig, CircleX, Copy, Check, LoaderCircle, LogIn, UserPlus } from '@lucide/svelte';
+  import CopyButton from '$lib/components/CopyButton.svelte';
+  import Field from '$lib/components/Field.svelte';
+  import Panel from '$lib/components/Panel.svelte';
+  import { CircleCheckBig, CircleX, LoaderCircle, LogIn, UserPlus } from '@lucide/svelte';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -30,7 +33,6 @@
   let loading = $state(false);
   let handleError = $state('');
   let timeLeft = $state('');
-  let copied = $state(false);
 
   // Countdown timer — updates every minute while expiresAt is set
   $effect(() => {
@@ -96,18 +98,6 @@
     }
   }
 
-  async function copyToken() {
-    try {
-      await navigator.clipboard.writeText(token);
-      copied = true;
-      setTimeout(() => {
-        copied = false;
-      }, 2000);
-    } catch {
-      toast.error('Failed to copy — please select and copy the token manually.');
-    }
-  }
-
   function startOver() {
     step = 'handle';
     handle = '';
@@ -139,7 +129,7 @@
     <!-- Login gate — new users create an account; returning users sign in -->
     <div class="w-full max-w-lg space-y-4">
       <!-- Create account card -->
-      <div class="rounded-xl border border-[#1e3a5f] bg-[#111827]/80 p-8 backdrop-blur-sm">
+      <Panel class="rounded-xl bg-[#111827]/80 p-8 backdrop-blur-sm">
         <div class="mb-4 flex items-center gap-3">
           <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#00d4ff]/30 bg-[#00d4ff]/10">
             <UserPlus class="h-5 w-5 text-[#00d4ff]" />
@@ -159,10 +149,10 @@
         <p class="mt-3 text-center text-xs text-[#e2e8f0]/40">
           You'll set up a passkey on the next page.<br />After that, come back here to link your RSI handle.
         </p>
-      </div>
+      </Panel>
 
       <!-- Sign in card -->
-      <div class="rounded-xl border border-[#1e3a5f] bg-[#111827]/80 p-8 backdrop-blur-sm">
+      <Panel class="rounded-xl bg-[#111827]/80 p-8 backdrop-blur-sm">
         <div class="mb-4 flex items-center gap-3">
           <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#1e3a5f] bg-[#0d1526]">
             <LogIn class="h-5 w-5 text-[#94a3b8]" />
@@ -179,13 +169,11 @@
           <LogIn class="h-4 w-4" />
           Sign in with SCID
         </button>
-      </div>
+      </Panel>
     </div>
   {:else if data.status?.verified && !allowReVerify}
     <!-- Already-verified card -->
-    <div
-      class="w-full max-w-lg rounded-xl border border-emerald-500/30 bg-[#111827]/80 p-8 text-center backdrop-blur-sm"
-    >
+    <Panel class="w-full max-w-lg rounded-xl border-emerald-500/30 bg-[#111827]/80 p-8 text-center backdrop-blur-sm">
       <div class="mb-4 flex justify-center">
         <CircleCheckBig class="h-16 w-16 text-emerald-400" />
       </div>
@@ -231,12 +219,10 @@
           Re-verify with a different RSI handle
         </button>
       </div>
-    </div>
+    </Panel>
   {:else}
     <!-- Wizard card -->
-    <div
-      class="w-full max-w-lg rounded-xl border border-[#1e3a5f] bg-[#111827]/80 p-8 backdrop-blur-sm"
-    >
+    <Panel class="w-full max-w-lg rounded-xl bg-[#111827]/80 p-8 backdrop-blur-sm">
       {#if allowReVerify}
         <div class="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-400">
           <strong>Changing your RSI handle</strong> — completing this flow will replace your existing verification.
@@ -258,7 +244,7 @@
               ].join(' ')}
             >
               {#if stepNum > n}
-                <Check class="h-4 w-4" />
+                <CircleCheckBig class="h-4 w-4" />
               {:else}
                 {n}
               {/if}
@@ -291,10 +277,7 @@
             </p>
           </div>
 
-          <div class="space-y-1.5">
-            <label for="rsi-handle" class="block text-sm font-medium text-[#e2e8f0]/80">
-              Your RSI Handle
-            </label>
+          <Field forId="rsi-handle" label="Your RSI Handle" error={handleError}>
             <input
               id="rsi-handle"
               type="text"
@@ -312,10 +295,7 @@
                   : 'border-[#1e3a5f] focus:border-[#00d4ff] focus:ring-[#00d4ff]/20'
               ].join(' ')}
             />
-            {#if handleError}
-              <p class="text-xs text-red-400">{handleError}</p>
-            {/if}
-          </div>
+          </Field>
 
           <button
             type="submit"
@@ -343,31 +323,18 @@
 
           {#if token}
             <!-- Token display block -->
-            <div class="rounded-lg border border-[#1e3a5f] bg-[#0d1526] p-4">
+            <Panel class="rounded-lg p-4">
               <div class="mb-3 flex items-center justify-between">
                 <span class="text-xs font-medium uppercase tracking-wider text-[#e2e8f0]/40">
                   Verification Token
                 </span>
-                <button
-                  type="button"
-                  onclick={copyToken}
-                  class="flex items-center gap-1.5 rounded-md border border-[#1e3a5f] px-2.5 py-1 text-xs font-medium text-[#e2e8f0]/60 transition-colors hover:border-[#00d4ff]/40 hover:text-[#00d4ff]"
-                  aria-label="Copy token"
-                >
-                  {#if copied}
-                    <Check class="h-3.5 w-3.5 text-emerald-400" />
-                    <span class="text-emerald-400">Copied!</span>
-                  {:else}
-                    <Copy class="h-3.5 w-3.5" />
-                    Copy
-                  {/if}
-                </button>
+                <CopyButton text={token} ariaLabel="Copy token" />
               </div>
               <code class="block break-all font-mono text-lg text-[#00d4ff]">{token}</code>
               {#if timeLeft}
                 <p class="mt-2 text-xs text-[#e2e8f0]/40">{timeLeft}</p>
               {/if}
-            </div>
+            </Panel>
           {:else}
             <!-- Resumed pending state — no token available client-side -->
             <div
@@ -475,6 +442,6 @@
           </div>
         </div>
       {/if}
-    </div>
+    </Panel>
   {/if}
 </div>

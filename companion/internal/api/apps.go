@@ -495,6 +495,7 @@ func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
 // --- PUT /api/apps/{id} ---
 
 func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 64*1024)
 	user := userFromContext(r.Context())
 	clientID := chi.URLParam(r, "id")
 

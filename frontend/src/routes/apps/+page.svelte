@@ -6,6 +6,8 @@
   import type { PageData } from './$types';
   import type { AppRegistration, CreateAppRequest } from '$lib/utils/api';
   import { listApps, createApp, uploadAppLogo } from '$lib/utils/api';
+  import Field from '$lib/components/Field.svelte';
+  import Panel from '$lib/components/Panel.svelte';
 
   let { data }: { data: PageData } = $props();
 
@@ -146,14 +148,14 @@
 
 <div class="mx-auto w-full max-w-3xl px-6 py-16">
   {#if !data.status?.verified}
-    <div class="rounded-2xl border border-[#1e3a5f] bg-[#0d1526] p-8 text-center">
+    <Panel class="p-8 text-center">
       <ShieldCheck class="mx-auto mb-4 h-12 w-12 text-[#00d4ff]/40" />
       <h2 class="mb-2 text-xl font-bold text-[#e2e8f0]">Verification Required</h2>
       <p class="text-sm text-[#e2e8f0]/50">
         Only verified RSI citizens can register applications.
         <a href="/verify" class="text-[#00d4ff] hover:underline">Verify your identity →</a>
       </p>
-    </div>
+    </Panel>
   {:else}
     <!-- Header -->
     <div class="mb-8 flex items-center justify-between">
@@ -175,15 +177,12 @@
 
     <!-- New app form -->
     {#if showForm}
-      <div class="mb-8 rounded-2xl border border-[#1e3a5f] bg-[#0d1526] p-6">
+      <Panel class="mb-8 p-6">
         <h2 class="mb-6 text-lg font-semibold text-[#e2e8f0]">Register New Application</h2>
 
         <div class="space-y-5">
           <!-- Name -->
-          <div>
-            <label for="app-name" class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">
-              Application Name <span class="text-red-400">*</span>
-            </label>
+          <Field forId="app-name" label="Application Name" required error={formErrors.name}>
             <input
               id="app-name"
               type="text"
@@ -192,12 +191,10 @@
               placeholder="My Star Citizen App"
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30"
             />
-            {#if formErrors.name}<p class="mt-1 text-xs text-red-400">{formErrors.name}</p>{/if}
-          </div>
+          </Field>
 
           <!-- Launch URL -->
-          <div>
-            <label for="app-launch-url" class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Launch URL</label>
+          <Field forId="app-launch-url" label="Launch URL" error={formErrors.launchURL}>
             <input
               id="app-launch-url"
               type="url"
@@ -205,12 +202,14 @@
               placeholder="https://example.com"
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30"
             />
-            {#if formErrors.launchURL}<p class="mt-1 text-xs text-red-400">{formErrors.launchURL}</p>{/if}
-          </div>
+          </Field>
 
           <!-- Description -->
-          <div>
-            <label for="app-description" class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Description</label>
+          <Field
+            forId="app-description"
+            label="Description"
+            hint={`${formDescription.length}/200`}
+          >
             <textarea
               id="app-description"
               bind:value={formDescription}
@@ -219,12 +218,8 @@
               placeholder="A short description shown in the app directory"
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30 resize-none"
             ></textarea>
-            <p class="mt-1 text-xs text-[#e2e8f0]/30">{formDescription.length}/200</p>
-          </div>
-          <div>
-            <p class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">
-              Redirect URIs <span class="text-red-400">*</span>
-            </p>
+          </Field>
+          <Field label="Redirect URIs" required error={formErrors.redirectURIs}>
             <div class="space-y-2">
               {#each formRedirectURIs as uri, i}
                 <div class="flex gap-2">
@@ -256,12 +251,10 @@
                 </button>
               {/if}
             </div>
-            {#if formErrors.redirectURIs}<p class="mt-1 text-xs text-red-400">{formErrors.redirectURIs}</p>{/if}
-          </div>
+          </Field>
 
           <!-- Logout URIs -->
-          <div>
-            <p class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Logout Redirect URIs</p>
+          <Field label="Logout Redirect URIs">
             <div class="space-y-2">
               {#each formLogoutURIs as uri, i}
                 <div class="flex gap-2">
@@ -291,7 +284,7 @@
                 </button>
               {/if}
             </div>
-          </div>
+          </Field>
 
           <!-- Toggles -->
           <div class="grid gap-4 sm:grid-cols-3">
@@ -322,8 +315,7 @@
         </div>
 
         <!-- Logo -->
-        <div class="mt-4">
-          <p class="mb-1 text-sm font-medium text-[#e2e8f0]/70">Logo (optional)</p>
+        <Field label="Logo (optional)" class="mt-4">
           <label class="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-[#1e3a5f] bg-[#0a0e1a] p-3 hover:border-[#00d4ff]/50">
             <input
               type="file"
@@ -335,7 +327,7 @@
               {formLogoFile ? formLogoFile.name : 'Click to choose an image…'}
             </span>
           </label>
-        </div>
+        </Field>
 
         <div class="mt-6 flex items-center gap-3">
           <button
@@ -353,14 +345,14 @@
             Cancel
           </button>
         </div>
-      </div>
+      </Panel>
     {/if}
 
     <!-- App list -->
     {#if loading}
       <div class="py-16 text-center text-sm text-[#e2e8f0]/40">Loading…</div>
     {:else if apps.length === 0 && !showForm}
-      <div class="rounded-2xl border border-dashed border-[#1e3a5f] p-12 text-center">
+      <Panel class="rounded-2xl border-dashed p-12 text-center">
         <AppWindow class="mx-auto mb-4 h-12 w-12 text-[#00d4ff]/20" />
         <h2 class="mb-1 text-lg font-semibold text-[#e2e8f0]/60">No Applications Yet</h2>
         <p class="mb-6 text-sm text-[#e2e8f0]/30">Register your first OIDC client to let players log in via SCID.</p>
@@ -370,7 +362,7 @@
         >
           Register New App
         </button>
-      </div>
+      </Panel>
     {:else}
       <div class="space-y-3">
         {#each apps as app (app.id)}

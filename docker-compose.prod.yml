@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
     environment:
       LISTEN_ADDR: ":8080"
-      DATABASE_URL: postgres://scid:${POSTGRES_PASSWORD}@postgres:5432/scid?sslmode=disable
+      DATABASE_URL: postgres://scid:${POSTGRES_PASSWORD}@postgres:5432/scid?sslmode=prefer
       POCKET_ID_INTERNAL_URL: http://pocket-id:1411
       POCKET_ID_ADMIN_API_KEY: ${POCKET_ID_ADMIN_API_KEY}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}

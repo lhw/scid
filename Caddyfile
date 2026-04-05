@@ -13,6 +13,13 @@
 # We inject a <style> block into every HTML response to hide the first name,
 # last name, and display name fields — Pocket ID has no native toggle for this.
 auth.scid.my {
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
     # Inject styles and a fixed "Return to SCID" back-button into every HTML page.
     # Fields hidden: first name, last name, display name (Pocket ID has no toggle for these).
     replace {
@@ -32,5 +39,9 @@ auth.scid.my {
 
 # SCID — companion API + SvelteKit frontend (both served by the companion binary)
 scid.my {
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+
     reverse_proxy companion:8080
 }

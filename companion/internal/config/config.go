@@ -102,7 +102,7 @@ func Load() (*Config, error) {
 		SMTPAdminEmail:      os.Getenv("SMTP_ADMIN_EMAIL"),
 	}
 
-	for _, o := range strings.Split(getEnv("CORS_ALLOWED_ORIGINS", "https://scid.my,http://localhost:5173"), ",") {
+	for _, o := range strings.Split(getEnv("CORS_ALLOWED_ORIGINS", "https://scid.my"), ",") {
 		if s := strings.TrimSpace(o); s != "" {
 			cfg.CORSAllowedOrigins = append(cfg.CORSAllowedOrigins, s)
 		}

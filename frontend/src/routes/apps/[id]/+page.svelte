@@ -4,12 +4,14 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import {
-    AppWindow, Copy, Check, RotateCcw, Trash2, Pencil, Plus, ShieldCheck, Upload, X
+    AppWindow, RotateCcw, Trash2, Pencil, Plus, ShieldCheck, Upload, X
   } from '@lucide/svelte';
   import type { PageData } from './$types';
   import type { AppRegistration, CreateAppRequest } from '$lib/utils/api';
   import { getApp, updateApp, deleteApp, rotateSecret, uploadAppLogo } from '$lib/utils/api';
   import CopyButton from '$lib/components/CopyButton.svelte';
+  import Field from '$lib/components/Field.svelte';
+  import Panel from '$lib/components/Panel.svelte';
 
   let { data }: { data: PageData } = $props();
 
@@ -197,13 +199,13 @@
   {#if loading}
     <div class="py-16 text-center text-sm text-[#e2e8f0]/40">Loading…</div>
   {:else if !app}
-    <div class="rounded-2xl border border-[#1e3a5f] bg-[#0d1526] p-8 text-center">
+    <Panel class="p-8 text-center">
       <p class="text-[#e2e8f0]/50">Application not found.</p>
       <a href="/apps" class="mt-4 inline-block text-sm text-[#00d4ff] hover:underline">← Back to Apps</a>
-    </div>
+    </Panel>
   {:else}
     <!-- Header card -->
-    <div class="rounded-2xl border border-[#1e3a5f] bg-[#0d1526] p-6 shadow-[0_0_40px_rgba(0,212,255,0.04)]">
+    <Panel class="p-6">
       <div class="mb-5 flex items-start gap-4">
         <!-- Logo -->
         <div class="relative flex-shrink-0">
@@ -276,7 +278,7 @@
         <p class="mb-1 text-xs font-medium uppercase tracking-wider text-[#e2e8f0]/40">Client ID (OIDC client_id)</p>
         <div class="flex items-center gap-2">
           <code class="flex-1 truncate font-mono text-sm text-[#00d4ff]/80">{app.id}</code>
-          <CopyButton text={app.id} />
+          <CopyButton text={app.id} ariaLabel="Copy client ID" />
         </div>
       </div>
 
@@ -290,7 +292,7 @@
             </div>
             <div class="flex items-center gap-2">
               <code class="flex-1 break-all font-mono text-sm text-emerald-400">{shownSecret}</code>
-              <CopyButton text={shownSecret} />
+              <CopyButton text={shownSecret} ariaLabel="Copy client secret" />
             </div>
           {:else}
             <div class="flex items-center justify-between">
@@ -327,38 +329,31 @@
           {/if}
         </div>
       {/if}
-    </div>
+    </Panel>
 
     <!-- Edit form -->
     {#if editing}
-      <div class="mt-6 rounded-2xl border border-[#1e3a5f] bg-[#0d1526] p-6">
+      <Panel class="mt-6 p-6">
         <h2 class="mb-5 text-base font-semibold text-[#e2e8f0]">Edit Application</h2>
         <div class="space-y-4">
-          <div>
-            <label for="edit-app-name" class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Name</label>
+          <Field forId="edit-app-name" label="Name" error={editErrors.name}>
             <input id="edit-app-name" type="text" bind:value={editName} maxlength="50"
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30" />
-            {#if editErrors.name}<p class="mt-1 text-xs text-red-400">{editErrors.name}</p>{/if}
-          </div>
+          </Field>
 
-          <div>
-            <label for="edit-app-launch-url" class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Launch URL</label>
+          <Field forId="edit-app-launch-url" label="Launch URL" error={editErrors.launchURL}>
             <input id="edit-app-launch-url" type="url" bind:value={editLaunchURL} placeholder="https://example.com"
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30" />
-            {#if editErrors.launchURL}<p class="mt-1 text-xs text-red-400">{editErrors.launchURL}</p>{/if}
-          </div>
+          </Field>
 
-          <div>
-            <label for="edit-app-description" class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Description</label>
+          <Field forId="edit-app-description" label="Description" hint={`${editDescription.length}/200`}>
             <textarea id="edit-app-description" bind:value={editDescription} maxlength="200" rows="2"
               placeholder="A short description shown in the app directory"
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30 resize-none"
             ></textarea>
-            <p class="mt-1 text-xs text-[#e2e8f0]/30">{editDescription.length}/200</p>
-          </div>
+          </Field>
 
-          <div>
-            <p class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Redirect URIs</p>
+          <Field label="Redirect URIs" required error={editErrors.redirectURIs}>
             <div class="space-y-2">
               {#each editRedirectURIs as uri, i}
                 <div class="flex gap-2">
@@ -381,11 +376,9 @@
                 </button>
               {/if}
             </div>
-            {#if editErrors.redirectURIs}<p class="mt-1 text-xs text-red-400">{editErrors.redirectURIs}</p>{/if}
-          </div>
+          </Field>
 
-          <div>
-            <p class="mb-1.5 block text-sm font-medium text-[#e2e8f0]/70">Logout URIs</p>
+          <Field label="Logout URIs">
             <div class="space-y-2">
               {#each editLogoutURIs as uri, i}
                 <div class="flex gap-2">
@@ -406,7 +399,7 @@
                 </button>
               {/if}
             </div>
-          </div>
+          </Field>
 
           <div class="grid gap-4 sm:grid-cols-3">
             <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] p-3">
@@ -460,7 +453,7 @@
             Cancel
           </button>
         </div>
-      </div>
+      </Panel>
     {:else}
       <!-- Detail view -->
       <div class="mt-6 space-y-4">
