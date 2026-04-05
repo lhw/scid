@@ -316,14 +316,20 @@ func (s *Server) handleUnblockOrgLogo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reset FetchedAt to the zero time so the next syncUserOrgs pass treats this
-	// entry as stale and re-downloads the logo. Without this the cache TTL would
-	// suppress the download until the entry ages out naturally (~7 days).
+	// Re-download the logo immediately using the stored URL so it reappears
+	// without waiting for the next user-triggered sync. If the URL isn't
+	// stored yet (older cache entries), fall back to marking the entry stale
+	// so the next syncUserOrgs pass re-fetches it.
 	if cached, err := s.store.GetOrgCache(r.Context(), sid); err == nil {
+		newLogoPath := ""
+		if cached.LogoURL != "" {
+			newLogoPath = cacheOrgLogo(r.Context(), sid, cached.LogoURL)
+		}
 		_ = s.store.UpsertOrgCache(r.Context(), &store.OrgCacheEntry{
 			SID:       sid,
 			Name:      cached.Name,
-			LogoPath:  "",
+			LogoPath:  newLogoPath,
+			LogoURL:   cached.LogoURL,
 			FetchedAt: time.Time{},
 		})
 	}

@@ -122,6 +122,7 @@ ALTER TABLE app_registrations ADD COLUMN rejection_reason TEXT NOT NULL DEFAULT 
 ALTER TABLE app_registrations ADD COLUMN listed INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE app_registrations ADD COLUMN description TEXT NOT NULL DEFAULT '';
 ALTER TABLE org_cache ADD COLUMN logo_blocked INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE org_cache ADD COLUMN logo_url TEXT NOT NULL DEFAULT '';
 `
 
 // VerificationToken represents a row in the verification_tokens table.
@@ -552,6 +553,7 @@ type OrgCacheEntry struct {
 	SID         string
 	Name        string
 	LogoPath    string
+	LogoURL     string
 	LogoBlocked bool
 	FetchedAt   time.Time
 }
@@ -567,14 +569,15 @@ type UserOrg struct {
 // UpsertOrgCache inserts or replaces an org cache entry.
 func (s *Store) UpsertOrgCache(ctx context.Context, e *OrgCacheEntry) error {
 	const q = `
-INSERT INTO org_cache (sid, name, logo_path, fetched_at)
-VALUES (?, ?, ?, ?)
+INSERT INTO org_cache (sid, name, logo_path, logo_url, fetched_at)
+VALUES (?, ?, ?, ?, ?)
 ON CONFLICT(sid) DO UPDATE SET
     name = excluded.name,
     logo_path = excluded.logo_path,
+    logo_url = excluded.logo_url,
     fetched_at = excluded.fetched_at`
 	_, err := s.execContext(ctx, q,
-		e.SID, e.Name, e.LogoPath, e.FetchedAt.UTC().Format(time.RFC3339))
+		e.SID, e.Name, e.LogoPath, e.LogoURL, e.FetchedAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("upsert org cache: %w", err)
 	}
@@ -583,11 +586,11 @@ ON CONFLICT(sid) DO UPDATE SET
 
 // GetOrgCache retrieves a cached org entry by SID. Returns ErrNotFound if missing.
 func (s *Store) GetOrgCache(ctx context.Context, sid string) (*OrgCacheEntry, error) {
-	const q = `SELECT sid, name, logo_path, COALESCE(logo_blocked,0), fetched_at FROM org_cache WHERE sid = ?`
+	const q = `SELECT sid, name, logo_path, COALESCE(logo_url,''), COALESCE(logo_blocked,0), fetched_at FROM org_cache WHERE sid = ?`
 	var e OrgCacheEntry
 	var logoBlocked int
 	var fetchedAt string
-	err := s.queryRowContext(ctx, q, sid).Scan(&e.SID, &e.Name, &e.LogoPath, &logoBlocked, &fetchedAt)
+	err := s.queryRowContext(ctx, q, sid).Scan(&e.SID, &e.Name, &e.LogoPath, &e.LogoURL, &logoBlocked, &fetchedAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -883,7 +886,7 @@ func (s *Store) ListBlockedHandles(ctx context.Context) ([]BlockedHandle, error)
 
 // ListOrgCache returns all org cache entries ordered by SID.
 func (s *Store) ListOrgCache(ctx context.Context) ([]OrgCacheEntry, error) {
-	const q = `SELECT sid, name, logo_path, COALESCE(logo_blocked,0), fetched_at FROM org_cache ORDER BY sid ASC`
+	const q = `SELECT sid, name, logo_path, COALESCE(logo_url,''), COALESCE(logo_blocked,0), fetched_at FROM org_cache ORDER BY sid ASC`
 	rows, err := s.queryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("list org cache: %w", err)
@@ -895,7 +898,7 @@ func (s *Store) ListOrgCache(ctx context.Context) ([]OrgCacheEntry, error) {
 		var e OrgCacheEntry
 		var logoBlocked int
 		var fetchedAt string
-		if err := rows.Scan(&e.SID, &e.Name, &e.LogoPath, &logoBlocked, &fetchedAt); err != nil {
+		if err := rows.Scan(&e.SID, &e.Name, &e.LogoPath, &e.LogoURL, &logoBlocked, &fetchedAt); err != nil {
 			return nil, fmt.Errorf("scan org cache: %w", err)
 		}
 		e.LogoBlocked = logoBlocked == 1

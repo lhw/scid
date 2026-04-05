@@ -65,6 +65,7 @@ func (s *Server) syncUserOrgs(ctx context.Context, userID, handle string, profil
 				SID:       org.SID,
 				Name:      name,
 				LogoPath:  logoPath,
+				LogoURL:   org.LogoURL,
 				FetchedAt: time.Now().UTC(),
 			}); err != nil {
 				slog.WarnContext(ctx, "sync orgs: upsert cache", "sid", org.SID, "err", err)
