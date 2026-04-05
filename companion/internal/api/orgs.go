@@ -275,13 +275,22 @@ func (s *Server) handleOrgLogo(w http.ResponseWriter, r *http.Request) {
 	// containsDotDot check on r.URL.Path (which could return 403 on some paths).
 	f, err := os.Open(abs)
 	if err != nil {
-		if os.IsNotExist(err) {
-			http.NotFound(w, r)
-		} else {
-			slog.WarnContext(r.Context(), "org logo: open file", "sid", sid, "path", abs, "err", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
+		if os.IsPermission(err) {
+			// Files cached before the world-readable chmod was applied may have
+			// 0600 permissions. Attempt a one-time fix so subsequent requests succeed.
+			if chmodErr := os.Chmod(abs, 0644); chmodErr == nil {
+				f, err = os.Open(abs)
+			}
 		}
-		return
+		if err != nil {
+			if os.IsNotExist(err) {
+				http.NotFound(w, r)
+			} else {
+				slog.WarnContext(r.Context(), "org logo: open file", "sid", sid, "path", abs, "err", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+			}
+			return
+		}
 	}
 	defer f.Close()
 
