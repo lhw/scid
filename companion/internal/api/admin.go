@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/lhw/scid/companion/internal/store"
@@ -313,6 +314,18 @@ func (s *Server) handleUnblockOrgLogo(w http.ResponseWriter, r *http.Request) {
 		slog.ErrorContext(r.Context(), "unblock org logo", "sid", sid, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
+	}
+
+	// Reset FetchedAt to the zero time so the next syncUserOrgs pass treats this
+	// entry as stale and re-downloads the logo. Without this the cache TTL would
+	// suppress the download until the entry ages out naturally (~7 days).
+	if cached, err := s.store.GetOrgCache(r.Context(), sid); err == nil {
+		_ = s.store.UpsertOrgCache(r.Context(), &store.OrgCacheEntry{
+			SID:       sid,
+			Name:      cached.Name,
+			LogoPath:  "",
+			FetchedAt: time.Time{},
+		})
 	}
 
 	admin := userFromContext(r.Context())
