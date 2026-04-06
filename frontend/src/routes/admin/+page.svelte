@@ -5,7 +5,7 @@
   import { goto } from '$app/navigation';
   import {
     ShieldCheck, CheckCircle, XCircle, AlertCircle, LoaderCircle,
-    Users, Building2, Flag, ShieldX, Trash2, User, ImageOff,
+    Users, Building2, Flag, ShieldX, Trash2, User, ImageOff, Search,
   } from '@lucide/svelte';
   import type { PageData } from './$types';
   import type { AppRegistration, AdminUserEntry, AdminBlockedHandle, AdminOrgEntry, AdminReport } from '$lib/utils/api';
@@ -98,6 +98,17 @@
   let blockedHandles = $state<AdminBlockedHandle[]>([]);
   let usersLoading = $state(false);
   let usersActionLoading = $state(false);
+  let usersSearch = $state('');
+  let filteredUsers = $derived(
+    usersSearch.trim()
+      ? users.filter(u => u.handle.toLowerCase().includes(usersSearch.trim().toLowerCase()))
+      : users
+  );
+  let filteredBlockedHandles = $derived(
+    usersSearch.trim()
+      ? blockedHandles.filter(b => b.handle.toLowerCase().includes(usersSearch.trim().toLowerCase()))
+      : blockedHandles
+  );
   let deleteTarget = $state<AdminUserEntry | null>(null);
   let deleteBlockHandle = $state(false);
   let deleteReason = $state('');
@@ -164,6 +175,15 @@
   let orgs = $state<AdminOrgEntry[]>([]);
   let orgsLoading = $state(false);
   let orgsActionLoading = $state('');
+  let orgsSearch = $state('');
+  let filteredOrgs = $derived(
+    orgsSearch.trim()
+      ? orgs.filter(o =>
+          o.sid.toLowerCase().includes(orgsSearch.trim().toLowerCase()) ||
+          (o.name && o.name.toLowerCase().includes(orgsSearch.trim().toLowerCase()))
+        )
+      : orgs
+  );
 
   async function loadOrgs() {
     orgsLoading = true;
@@ -377,11 +397,20 @@
 
     <!-- ===== Users tab ===== -->
     {#if activeTab === 'users'}
-      <div class="mb-6 flex items-center gap-3">
+      <div class="mb-6 flex flex-wrap items-center gap-3">
         <Users class="h-6 w-6 text-[#ffd700]" />
-        <div>
+        <div class="flex-1">
           <h2 class="text-xl font-semibold text-[#e2e8f0]">Users &amp; Handles</h2>
           <p class="mt-0.5 text-xs text-[#e2e8f0]/50">Manage verified users and RSI handle blocks</p>
+        </div>
+        <div class="relative w-full sm:w-64">
+          <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#e2e8f0]/30" />
+          <input
+            type="search"
+            bind:value={usersSearch}
+            placeholder="Search by handle…"
+            class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] py-1.5 pl-8 pr-3 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 outline-none focus:border-[#00d4ff]/50"
+          />
         </div>
       </div>
 
@@ -394,11 +423,11 @@
         <!-- Verified users -->
         <section class="mb-10">
           <h3 class="mb-3 text-sm font-semibold uppercase tracking-wider text-[#e2e8f0]/50">
-            Verified users ({users.length})
+            Verified users ({filteredUsers.length}{usersSearch.trim() ? ` of ${users.length}` : ''})
           </h3>
-          {#if users.length === 0}
+          {#if filteredUsers.length === 0}
             <div class="rounded-xl border border-[#1e3a5f] bg-[#0d1526] p-8 text-center text-sm text-[#e2e8f0]/40">
-              No verified users yet.
+              {usersSearch.trim() ? 'No users match your search.' : 'No verified users yet.'}
             </div>
           {:else}
             <div class="overflow-hidden rounded-xl border border-[#1e3a5f]">
@@ -412,7 +441,7 @@
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-[#1e3a5f] bg-[#0a0e1a]">
-                  {#each users as user (user.user_id)}
+                  {#each filteredUsers as user (user.user_id)}
                     <tr class="transition-colors hover:bg-[#0d1526]/60">
                       <td class="px-4 py-3 font-medium text-[#e2e8f0]">{user.handle}</td>
                       <td class="hidden px-4 py-3 text-xs text-[#e2e8f0]/50 md:table-cell">
@@ -459,7 +488,7 @@
         <section>
           <div class="mb-3 flex items-center justify-between">
             <h3 class="text-sm font-semibold uppercase tracking-wider text-[#e2e8f0]/50">
-              Blocked handles ({blockedHandles.length})
+              Blocked handles ({filteredBlockedHandles.length}{usersSearch.trim() ? ` of ${blockedHandles.length}` : ''})
             </h3>
             <button
               onclick={() => { blockTarget = ''; blockReason = ''; showBlockModal = true; }}
@@ -469,9 +498,9 @@
               Block a Handle
             </button>
           </div>
-          {#if blockedHandles.length === 0}
+          {#if filteredBlockedHandles.length === 0}
             <div class="rounded-xl border border-[#1e3a5f] bg-[#0d1526] p-8 text-center text-sm text-[#e2e8f0]/40">
-              No handles are currently blocked.
+              {usersSearch.trim() ? 'No blocked handles match your search.' : 'No handles are currently blocked.'}
             </div>
           {:else}
             <div class="overflow-hidden rounded-xl border border-[#1e3a5f]">
@@ -485,7 +514,7 @@
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-[#1e3a5f] bg-[#0a0e1a]">
-                  {#each blockedHandles as bh (bh.handle)}
+                  {#each filteredBlockedHandles as bh (bh.handle)}
                     <tr class="transition-colors hover:bg-[#0d1526]/60">
                       <td class="px-4 py-3 font-medium text-[#e2e8f0]">{bh.handle}</td>
                       <td class="hidden px-4 py-3 text-xs text-[#e2e8f0]/50 md:table-cell">
@@ -517,11 +546,20 @@
 
     <!-- ===== Orgs tab ===== -->
     {#if activeTab === 'orgs'}
-      <div class="mb-6 flex items-center gap-3">
+      <div class="mb-6 flex flex-wrap items-center gap-3">
         <Building2 class="h-6 w-6 text-[#ffd700]" />
-        <div>
+        <div class="flex-1">
           <h2 class="text-xl font-semibold text-[#e2e8f0]">Org Logos</h2>
           <p class="mt-0.5 text-xs text-[#e2e8f0]/50">Block or unblock cached organisation logos</p>
+        </div>
+        <div class="relative w-full sm:w-64">
+          <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#e2e8f0]/30" />
+          <input
+            type="search"
+            bind:value={orgsSearch}
+            placeholder="Search by SID or name…"
+            class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] py-1.5 pl-8 pr-3 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 outline-none focus:border-[#00d4ff]/50"
+          />
         </div>
       </div>
 
@@ -530,11 +568,14 @@
           <LoaderCircle class="mx-auto mb-3 h-6 w-6 animate-spin opacity-40" />
           Loading…
         </div>
-      {:else if orgs.length === 0}
+      {:else if filteredOrgs.length === 0}
         <div class="rounded-xl border border-[#1e3a5f] bg-[#0d1526] p-12 text-center text-sm text-[#e2e8f0]/40">
-          No organisations in cache yet.
+          {orgsSearch.trim() ? 'No organisations match your search.' : 'No organisations in cache yet.'}
         </div>
       {:else}
+        {#if orgsSearch.trim()}
+          <p class="mb-3 text-xs text-[#e2e8f0]/40">{filteredOrgs.length} of {orgs.length} organisations</p>
+        {/if}
         <div class="overflow-hidden rounded-xl border border-[#1e3a5f]">
           <table class="w-full text-sm">
             <thead class="bg-[#0d1526] text-xs text-[#e2e8f0]/50">
@@ -547,7 +588,7 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-[#1e3a5f] bg-[#0a0e1a]">
-              {#each orgs as org (org.sid)}
+              {#each filteredOrgs as org (org.sid)}
                 <tr class="transition-colors hover:bg-[#0d1526]/60">
                   <td class="px-4 py-3">
                     <div class="flex items-center gap-2">
