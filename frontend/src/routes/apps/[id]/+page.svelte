@@ -425,8 +425,7 @@
             </label>
           </div>
 
-          {#if app?.status === 'approved' || app?.listed}
-            <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] p-3">
+          <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] p-3">
               <input
                 type="checkbox"
                 bind:checked={editListed}
@@ -436,11 +435,10 @@
               <div>
                 <p class="text-sm font-medium text-[#e2e8f0]">List in App Directory</p>
                 <p class="mt-0.5 text-xs text-[#e2e8f0]/40">
-                  Show this app on the public Discover page — requires a Launch URL. Selecting this option submits the app for directory approval; the app remains usable unless the listing is approved.
+                  Show this app on the public Discover page — requires a Launch URL. Submits the app for admin review; your app remains fully functional regardless of approval status.
                 </p>
               </div>
             </label>
-          {/if}
         </div>
 
         <div class="mt-5 flex items-center gap-3">
