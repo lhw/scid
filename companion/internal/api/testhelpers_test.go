@@ -496,7 +496,7 @@ type testEnv struct {
 // newTestEnv creates a complete test environment with in-memory SQLite, mock
 // Pocket ID server, mock RSI scraper, and a running companion HTTP server.
 // Resources are automatically cleaned up via t.Cleanup.
-func newTestEnv(t *testing.T, requireApproval bool) *testEnv {
+func newTestEnv(t *testing.T, _ bool) *testEnv {
 	t.Helper()
 
 	pidMock := newMockPocketID()
@@ -518,7 +518,6 @@ func newTestEnv(t *testing.T, requireApproval bool) *testEnv {
 		OIDCClientID:        "scid-frontend",
 		SessionTTL:          24 * 60 * 60 * 1e9, // 24h
 		SessionCookieSecure: false,
-		RequireAppApproval:  requireApproval,
 	}
 
 	companion := New(cfg, st)

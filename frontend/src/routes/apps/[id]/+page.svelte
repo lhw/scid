@@ -234,7 +234,7 @@
             <h1 class="text-xl font-bold text-[#e2e8f0]">{app.name}</h1>
             {#if app.status === 'pending'}
               <span class="rounded-full border border-yellow-500/30 bg-yellow-500/10 px-2 py-0.5 text-xs text-yellow-400">
-                Pending Approval
+                Pending Listing Approval
               </span>
             {:else if app.status === 'rejected'}
               <span class="rounded-full border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-xs text-red-400">
@@ -257,7 +257,7 @@
             <p class="mt-2 text-sm text-[#e2e8f0]/60">{app.description}</p>
           {/if}
           {#if app.status === 'pending'}
-            <p class="mt-1 text-xs text-yellow-400/70">Your application is awaiting admin review. It will not be usable until approved.</p>
+            <p class="mt-1 text-xs text-yellow-400/70">Your directory listing request is awaiting admin review. The app will continue to work normally until approval is granted.</p>
           {:else if app.status === 'rejected' && app.rejection_reason}
             <p class="mt-1 text-xs text-red-400/70">Reason: {app.rejection_reason}</p>
           {/if}
@@ -425,7 +425,7 @@
             </label>
           </div>
 
-          {#if app?.status === 'approved'}
+          {#if app?.status === 'approved' || app?.listed}
             <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] p-3">
               <input
                 type="checkbox"
@@ -436,7 +436,7 @@
               <div>
                 <p class="text-sm font-medium text-[#e2e8f0]">List in App Directory</p>
                 <p class="mt-0.5 text-xs text-[#e2e8f0]/40">
-                  Show this app on the public Discover page — requires a Launch URL.
+                  Show this app on the public Discover page — requires a Launch URL. Selecting this option submits the app for directory approval; the app remains usable unless the listing is approved.
                 </p>
               </div>
             </label>

@@ -13,9 +13,9 @@ func TestResolveOIDCClientAccessPolicy(t *testing.T) {
 		{name: "approved open", status: "approved", verifiedOnly: false, want: oidcClientAccessOpen},
 		{name: "approved verified only", status: "approved", verifiedOnly: true, want: oidcClientAccessVerifiedOnly},
 		{name: "implicit approved", status: "", verifiedOnly: false, want: oidcClientAccessOpen},
-		{name: "pending stays pending", status: "pending", verifiedOnly: false, want: oidcClientAccessPending},
-		{name: "pending verified only still pending", status: "pending", verifiedOnly: true, want: oidcClientAccessPending},
-		{name: "rejected stays pending", status: "rejected", verifiedOnly: true, want: oidcClientAccessPending},
+		{name: "pending open", status: "pending", verifiedOnly: false, want: oidcClientAccessOpen},
+		{name: "pending verified only", status: "pending", verifiedOnly: true, want: oidcClientAccessVerifiedOnly},
+		{name: "rejected verified only", status: "rejected", verifiedOnly: true, want: oidcClientAccessVerifiedOnly},
 		{name: "unknown status errors", status: "disabled", verifiedOnly: false, wantErr: true},
 	}
 

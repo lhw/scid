@@ -33,9 +33,9 @@ func TestCreateApp_UnverifiedUserForbidden(t *testing.T) {
 	env.drain(resp)
 }
 
-// TestCreateApp_AutoApproved: with RequireAppApproval=false the app is approved immediately.
+// TestCreateApp_AutoApproved: unlisted apps are approved immediately.
 func TestCreateApp_AutoApproved(t *testing.T) {
-	env := newTestEnv(t, false /* no approval required */)
+	env := newTestEnv(t, false)
 	env.addUser("tok-alice", "user-alice", "alice", "verified")
 
 	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", minAppRequest("Auto App"))
@@ -59,12 +59,16 @@ func TestCreateApp_AutoApproved(t *testing.T) {
 	})
 }
 
-// TestCreateApp_PendingApproval: with RequireAppApproval=true the app is pending.
+// TestCreateApp_PendingApproval: listed apps are pending approval.
 func TestCreateApp_PendingApproval(t *testing.T) {
-	env := newTestEnv(t, true /* approval required */)
+	env := newTestEnv(t, false)
 	env.addUser("tok-alice", "user-alice", "alice", "verified")
 
-	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", minAppRequest("Pending App"))
+	body := minAppRequest("Pending App")
+	body["launch_url"] = "https://example.com/"
+	body["listed"] = true
+
+	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", body)
 	env.mustStatus(resp, http.StatusCreated)
 
 	var ar appResponse
@@ -72,6 +76,22 @@ func TestCreateApp_PendingApproval(t *testing.T) {
 
 	if ar.Status != "pending" {
 		t.Errorf("expected status=pending, got %q", ar.Status)
+	}
+}
+
+// TestCreateApp_UnlistedAppAutoApproved: unlisted apps are approved immediately.
+func TestCreateApp_UnlistedAppAutoApproved(t *testing.T) {
+	env := newTestEnv(t, false)
+	env.addUser("tok-alice", "user-alice", "alice", "verified")
+
+	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", minAppRequest("Unlisted Auto App"))
+	env.mustStatus(resp, http.StatusCreated)
+
+	var ar appResponse
+	env.decodeJSON(resp, &ar)
+
+	if ar.Status != "approved" {
+		t.Errorf("expected status=approved, got %q", ar.Status)
 	}
 }
 
@@ -183,7 +203,10 @@ func TestApproveApp_AdminOnly(t *testing.T) {
 	env.addUser("tok-nonAdmin", "user-nonadmin", "nonadmin", "verified")
 
 	// Alice creates a pending app.
-	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", minAppRequest("Admin Test App"))
+	body := minAppRequest("Admin Test App")
+	body["launch_url"] = "https://example.com/"
+	body["listed"] = true
+	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", body)
 	env.mustStatus(resp, http.StatusCreated)
 	var ar appResponse
 	env.decodeJSON(resp, &ar)
@@ -201,7 +224,10 @@ func TestApproveApp_Success(t *testing.T) {
 	env.addUser("tok-admin", "user-admin", "admin", "admin")
 
 	// Alice creates a pending app.
-	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", minAppRequest("Approvable App"))
+	body := minAppRequest("Approvable App")
+	body["launch_url"] = "https://example.com/"
+	body["listed"] = true
+	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", body)
 	env.mustStatus(resp, http.StatusCreated)
 	var ar appResponse
 	env.decodeJSON(resp, &ar)
@@ -244,7 +270,10 @@ func TestRejectApp_Success(t *testing.T) {
 	env.addUser("tok-alice", "user-alice", "alice", "verified")
 	env.addUser("tok-admin", "user-admin", "admin", "admin")
 
-	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", minAppRequest("Rejectible App"))
+	body := minAppRequest("Rejectible App")
+	body["launch_url"] = "https://example.com/"
+	body["listed"] = true
+	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", body)
 	env.mustStatus(resp, http.StatusCreated)
 	var ar appResponse
 	env.decodeJSON(resp, &ar)
@@ -267,8 +296,9 @@ func TestRejectApp_Success(t *testing.T) {
 func TestDirectoryListing(t *testing.T) {
 	env := newTestEnv(t, false)
 	env.addUser("tok-alice", "user-alice", "alice", "verified")
+	env.addUser("tok-admin", "user-admin", "admin", "admin")
 
-	// Create a listed app (auto-approved + listed).
+	// Create a listed app, then approve it so it appears in the directory.
 	listedBody := map[string]any{
 		"name":          "Listed App",
 		"redirect_uris": []string{"https://example.com/callback"},
@@ -281,12 +311,15 @@ func TestDirectoryListing(t *testing.T) {
 	var listed appResponse
 	env.decodeJSON(resp, &listed)
 
+	resp = env.do(http.MethodPost, "/api/admin/apps/"+listed.ID+"/approve", "tok-admin", nil)
+	env.mustStatus(resp, http.StatusOK)
+
 	// Create an unlisted app.
 	resp = env.do(http.MethodPost, "/api/apps", "tok-alice", minAppRequest("Unlisted App"))
 	env.mustStatus(resp, http.StatusCreated)
 	env.drain(resp)
 
-	// The public directory should contain only the listed app.
+	// The public directory should contain only the approved listed app.
 	resp = env.do(http.MethodGet, "/api/apps/directory", "", nil)
 	env.mustStatus(resp, http.StatusOK)
 	var dir []appResponse
@@ -371,6 +404,68 @@ func TestUpdateApp(t *testing.T) {
 	env.decodeJSON(resp, &updatedAR)
 	if updatedAR.Name != "Updated Name" {
 		t.Errorf("expected name=Updated Name, got %q", updatedAR.Name)
+	}
+}
+
+func TestUpdateApp_EnableListingRequiresApproval(t *testing.T) {
+	env := newTestEnv(t, true)
+	env.addUser("tok-alice", "user-alice", "alice", "verified")
+
+	body := minAppRequest("Unlisted App")
+	body["launch_url"] = "https://example.com/"
+	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", body)
+	env.mustStatus(resp, http.StatusCreated)
+	var ar appResponse
+	env.decodeJSON(resp, &ar)
+
+	updated := map[string]any{
+		"name":          ar.Name,
+		"launch_url":    ar.LaunchURL,
+		"redirect_uris": ar.RedirectURIs,
+		"is_public":     ar.IsPublic,
+		"listed":        true,
+	}
+	resp = env.do(http.MethodPut, "/api/apps/"+ar.ID, "tok-alice", updated)
+	env.mustStatus(resp, http.StatusOK)
+
+	var updatedAR appResponse
+	env.decodeJSON(resp, &updatedAR)
+	if updatedAR.Status != "pending" {
+		t.Fatalf("expected status=pending after enabling listing, got %q", updatedAR.Status)
+	}
+	if !updatedAR.Listed {
+		t.Fatal("expected listed to be true after update")
+	}
+}
+
+func TestUpdateApp_CancelPendingListingApprovesImmediately(t *testing.T) {
+	env := newTestEnv(t, true)
+	env.addUser("tok-alice", "user-alice", "alice", "verified")
+
+	body := minAppRequest("Pending Listing App")
+	body["launch_url"] = "https://example.com/"
+	body["listed"] = true
+	resp := env.do(http.MethodPost, "/api/apps", "tok-alice", body)
+	env.mustStatus(resp, http.StatusCreated)
+	var ar appResponse
+	env.decodeJSON(resp, &ar)
+
+	updated := map[string]any{
+		"name":          ar.Name,
+		"redirect_uris": ar.RedirectURIs,
+		"is_public":     ar.IsPublic,
+		"listed":        false,
+	}
+	resp = env.do(http.MethodPut, "/api/apps/"+ar.ID, "tok-alice", updated)
+	env.mustStatus(resp, http.StatusOK)
+
+	var updatedAR appResponse
+	env.decodeJSON(resp, &updatedAR)
+	if updatedAR.Status != "approved" {
+		t.Fatalf("expected status=approved after canceling listing request, got %q", updatedAR.Status)
+	}
+	if updatedAR.Listed {
+		t.Fatal("expected listed to be false after canceling listing request")
 	}
 }
 

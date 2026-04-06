@@ -282,8 +282,6 @@ func (s *Server) syncOIDCClientAccess(r *http.Request, clientID, status string, 
 	}
 
 	switch policy {
-	case oidcClientAccessPending:
-		return s.setPendingGroups(r, clientID)
 	case oidcClientAccessVerifiedOnly:
 		return s.setVerifiedOnlyGroups(r, clientID, true)
 	case oidcClientAccessOpen:
@@ -294,20 +292,17 @@ func (s *Server) syncOIDCClientAccess(r *http.Request, clientID, status string, 
 }
 
 const (
-	oidcClientAccessPending      = "pending"
 	oidcClientAccessVerifiedOnly = "verified-only"
 	oidcClientAccessOpen         = "open"
 )
 
 func resolveOIDCClientAccessPolicy(status string, verifiedOnly bool) (string, error) {
 	switch status {
-	case "", "approved":
+	case "", "approved", "pending", "rejected":
 		if verifiedOnly {
 			return oidcClientAccessVerifiedOnly, nil
 		}
 		return oidcClientAccessOpen, nil
-	case "pending", "rejected":
-		return oidcClientAccessPending, nil
 	default:
 		return "", fmt.Errorf("unsupported app status %q", status)
 	}
@@ -388,7 +383,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 
 	// Determine initial status and apply group restrictions accordingly.
 	status := "approved"
-	if s.cfg.RequireAppApproval {
+	if req.Listed {
 		status = "pending"
 	}
 	if err := s.syncOIDCClientAccess(r, client.ID, status, req.VerifiedOnly); err != nil {
@@ -547,6 +542,9 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 
 	verifiedOnlyUpdated := false
 	listedUpdated := false
+	statusUpdated := false
+	previousStatus := reg.Status
+	previousRejectionReason := reg.RejectionReason
 	rollbackState := func() {
 		if listedUpdated {
 			if revertErr := s.store.UpdateAppRegistrationListed(r.Context(), clientID, !req.Listed); revertErr != nil {
@@ -557,8 +555,13 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 			if revertErr := s.store.UpdateAppRegistrationVerifiedOnly(r.Context(), clientID, !req.VerifiedOnly); revertErr != nil {
 				slog.ErrorContext(r.Context(), "revert verified_only failed", "client_id", clientID, "err", revertErr)
 			}
-			if revertErr := s.syncOIDCClientAccess(r, clientID, reg.Status, !req.VerifiedOnly); revertErr != nil {
+			if revertErr := s.syncOIDCClientAccess(r, clientID, previousStatus, !req.VerifiedOnly); revertErr != nil {
 				slog.ErrorContext(r.Context(), "revert client access failed", "client_id", clientID, "err", revertErr)
+			}
+		}
+		if statusUpdated {
+			if revertErr := s.store.UpdateAppRegistrationStatus(r.Context(), clientID, previousStatus, previousRejectionReason); revertErr != nil {
+				slog.ErrorContext(r.Context(), "revert app status failed", "client_id", clientID, "err", revertErr)
 			}
 		}
 		rollbackOIDCClient()
@@ -590,6 +593,28 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		}
 		listedUpdated = true
 		reg.Listed = req.Listed
+
+		if req.Listed && reg.Status != "pending" {
+			if err := s.store.UpdateAppRegistrationStatus(r.Context(), clientID, "pending", ""); err != nil {
+				rollbackState()
+				slog.ErrorContext(r.Context(), "update app registration status failed", "client_id", clientID, "err", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			statusUpdated = true
+			reg.Status = "pending"
+			reg.RejectionReason = ""
+		} else if !req.Listed && reg.Status == "pending" {
+			if err := s.store.UpdateAppRegistrationStatus(r.Context(), clientID, "approved", ""); err != nil {
+				rollbackState()
+				slog.ErrorContext(r.Context(), "update app registration status failed", "client_id", clientID, "err", err)
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+			statusUpdated = true
+			reg.Status = "approved"
+			reg.RejectionReason = ""
+		}
 	}
 
 	newDescription := strings.TrimSpace(req.Description)
@@ -600,6 +625,18 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		reg.Description = newDescription
+	}
+
+	if statusUpdated && reg.Status == "pending" {
+		s.mailer.SendNewAppNotification(mailer.NewAppNotification{
+			AppName:      client.Name,
+			AppID:        client.ID,
+			OwnerHandle:  user.Username,
+			RedirectURIs: req.RedirectURIs,
+			VerifiedOnly: req.VerifiedOnly,
+			Listed:       req.Listed,
+			CreatedAt:    reg.CreatedAt,
+		})
 	}
 
 	writeJSON(w, http.StatusOK, buildAppResponse(client, reg, ""))

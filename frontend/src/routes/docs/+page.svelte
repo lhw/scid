@@ -65,7 +65,7 @@
           'Log in to SCID with a verified account.',
           'Go to My Apps and register a new application.',
           'Fill in your application name, launch URL, redirect URIs, and any optional logout URIs.',
-          'Choose whether the client is public, PKCE-only, verified-only, and whether it should be listed in the public directory.',
+          'Choose whether the client is public, PKCE-only, verified-only, and whether it should be listed in the public directory (listing may require admin approval).',
           'Submit for approval if the instance requires it, then use the issued Client ID and Client Secret with any OIDC library.',
         ] as step, i}
           <li class="flex items-start gap-3">

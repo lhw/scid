@@ -48,7 +48,7 @@
           'Confidential client mode for server-side apps (uses a client secret)',
           'PKCE requirement (recommended for all clients)',
           'Verified-only access (restricts logins to RSI-verified users)',
-          'Optional app listing in the public directory',
+          'Optional app listing in the public directory (listing may require approval)',
           'Optional app logo',
         ] as item}
           <li class="flex items-start gap-2 text-sm text-[#e2e8f0]/60">
@@ -58,7 +58,8 @@
         {/each}
       </ul>
       <p class="mt-4 text-sm text-[#e2e8f0]/50">
-        New apps may require admin approval depending on the instance configuration.
+        New apps only require admin approval if you opt in to the public app directory listing.
+        Unlisted clients are usable immediately while listing approval is pending.
       </p>
     </section>
 

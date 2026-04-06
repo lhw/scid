@@ -52,10 +52,6 @@ type Config struct {
 	// SessionCookieSecure controls whether the session cookie uses the Secure attribute.
 	SessionCookieSecure bool
 
-	// RequireAppApproval controls whether newly registered OIDC clients require
-	// admin approval before they become active.  Defaults to true.
-	RequireAppApproval bool
-
 	// TurnstileSecretKey is the Cloudflare Turnstile secret used to validate
 	// captcha responses server-side. If empty, captcha validation is skipped
 	// (useful for local development).
@@ -91,7 +87,6 @@ func Load() (*Config, error) {
 		OIDCClientID:        getEnv("PUBLIC_OIDC_CLIENT_ID", "scid-frontend"),
 		OIDCClientSecret:    os.Getenv("OIDC_CLIENT_SECRET"),
 		SessionCookieSecure: getEnv("SCID_COOKIE_SECURE", "true") != "false",
-		RequireAppApproval:  getEnv("APP_REQUIRE_APPROVAL", "true") != "false",
 		TurnstileSecretKey:  os.Getenv("TURNSTILE_SECRET_KEY"),
 		TurnstileSiteKey:    getEnv("PUBLIC_TURNSTILE_SITE_KEY", ""),
 		SMTPHost:            os.Getenv("SMTP_HOST"),
