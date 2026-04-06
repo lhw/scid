@@ -249,17 +249,6 @@ func (s *Server) ownerRegOrNil(r *http.Request, clientID, userID string) (*store
 	return reg, nil
 }
 
-// setPendingGroups restricts a new OIDC client to the scid:pending sentinel group
-// so that no real user can log in until an admin approves it.
-func (s *Server) setPendingGroups(r *http.Request, clientID string) error {
-	g, err := s.pid.EnsureGroupExists(r.Context(), "scid:pending", "Pending Admin Approval")
-	if err != nil {
-		return err
-	}
-	_, err = s.pid.SetOIDCClientAllowedGroups(r.Context(), clientID, []string{g.ID})
-	return err
-}
-
 // setVerifiedOnlyGroups configures Pocket ID group restriction for verified_only.
 // verifiedOnly=true → allows only the "verified" group; false → removes restriction.
 func (s *Server) setVerifiedOnlyGroups(r *http.Request, clientID string, verifiedOnly bool) error {
@@ -563,6 +552,12 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 			if revertErr := s.store.UpdateAppRegistrationStatus(r.Context(), clientID, previousStatus, previousRejectionReason); revertErr != nil {
 				slog.ErrorContext(r.Context(), "revert app status failed", "client_id", clientID, "err", revertErr)
 			}
+			// Re-sync groups unless verifiedOnly rollback already handled it.
+			if !verifiedOnlyUpdated {
+				if revertErr := s.syncOIDCClientAccess(r, clientID, previousStatus, reg.VerifiedOnly); revertErr != nil {
+					slog.ErrorContext(r.Context(), "revert client access after status rollback failed", "client_id", clientID, "err", revertErr)
+				}
+			}
 		}
 		rollbackOIDCClient()
 	}
@@ -604,6 +599,15 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 			statusUpdated = true
 			reg.Status = "pending"
 			reg.RejectionReason = ""
+			// Sync Pocket ID groups for the new pending status (clears any stale scid:pending restriction).
+			if !verifiedOnlyUpdated {
+				if err := s.syncOIDCClientAccess(r, clientID, "pending", reg.VerifiedOnly); err != nil {
+					rollbackState()
+					slog.ErrorContext(r.Context(), "sync client access after listing status change failed", "client_id", clientID, "err", err)
+					writeError(w, http.StatusInternalServerError, "internal error")
+					return
+				}
+			}
 		} else if !req.Listed && reg.Status == "pending" {
 			if err := s.store.UpdateAppRegistrationStatus(r.Context(), clientID, "approved", ""); err != nil {
 				rollbackState()
@@ -614,6 +618,15 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 			statusUpdated = true
 			reg.Status = "approved"
 			reg.RejectionReason = ""
+			// Sync Pocket ID groups for the new approved status (clears any stale scid:pending restriction).
+			if !verifiedOnlyUpdated {
+				if err := s.syncOIDCClientAccess(r, clientID, "approved", reg.VerifiedOnly); err != nil {
+					rollbackState()
+					slog.ErrorContext(r.Context(), "sync client access after listing status change failed", "client_id", clientID, "err", err)
+					writeError(w, http.StatusInternalServerError, "internal error")
+					return
+				}
+			}
 		}
 	}
 
