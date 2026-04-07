@@ -234,25 +234,6 @@
       </div>
     </section>
 
-    <!-- Guidelines -->
-    <section>
-      <h2 class="mb-4 text-xl font-semibold text-[#e2e8f0]">Usage guidelines</h2>
-      <ul class="space-y-2">
-        {#each [
-          'Always link the button to a valid SCID authorization URL with your registered client_id.',
-          'Do not alter the colours or typography in ways that make the button unrecognisable.',
-          'Use the logo-only mark for icon-constrained spaces (e.g. a toolbar icon), not as a standalone login trigger.',
-          'Include accessible alt text — "Login with SCID" or "SCID" for the logo mark.',
-          'SCID is an unofficial fan project and not affiliated with Cloud Imperium Games.',
-        ] as item}
-          <li class="flex items-start gap-2 text-sm text-[#e2e8f0]/60">
-            <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-[#00d4ff]/40"></span>
-            {item}
-          </li>
-        {/each}
-      </ul>
-    </section>
-
   </div>
 
   <div class="mt-12 flex items-center justify-between border-t border-[#1e3a5f] pt-6">
