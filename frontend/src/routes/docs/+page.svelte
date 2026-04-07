@@ -55,6 +55,13 @@
           <p class="mb-1 font-semibold text-[#e2e8f0] group-hover:text-[#00d4ff]">OIDC Claims Reference</p>
           <p class="text-sm text-[#e2e8f0]/50">All claims returned in ID tokens and the userinfo endpoint.</p>
         </a>
+        <a
+          href="/docs/badge"
+          class="group rounded-xl border border-[#1e3a5f] bg-[#0d1526] p-6 transition-colors hover:border-[#00d4ff]/40"
+        >
+          <p class="mb-1 font-semibold text-[#e2e8f0] group-hover:text-[#00d4ff]">Badges &amp; Buttons</p>
+          <p class="text-sm text-[#e2e8f0]/50">Copy-ready "Login with SCID" SVG and CSS assets for your site.</p>
+        </a>
       </div>
     </section>
 

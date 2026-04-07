@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="44" viewBox="0 0 220 44" role="img" aria-label="Login with SCID">
+  <title>Login with SCID</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="220" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0d1526"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="border" x1="0" y1="0" x2="220" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#1e3a5f" stop-opacity="0.8"/>
+    </linearGradient>
+  </defs>
+  <!-- Button background -->
+  <rect width="220" height="44" rx="8" fill="url(#bg)"/>
+  <!-- Border -->
+  <rect x="0.5" y="0.5" width="219" height="43" rx="7.5" fill="none" stroke="url(#border)" stroke-width="1"/>
+  <!-- Icon area tint -->
+  <rect x="1" y="1" width="43" height="42" rx="7" fill="#00d4ff" fill-opacity="0.08"/>
+  <!-- Icon: nested SVG using exact favicon coordinate space -->
+  <svg x="2" y="2" width="40" height="40" viewBox="0 0 32 32" fill="none">
+    <polygon points="16,4 26,12 22,28 10,28 6,12" fill="none" stroke="#00d4ff" stroke-width="1.5" stroke-linejoin="round"/>
+    <polygon points="16,8 23,13 20,26 12,26 9,13" fill="#00d4ff" fill-opacity="0.08"/>
+    <text x="16" y="22" text-anchor="middle" font-family="Verdana,Arial,sans-serif" font-size="13" font-weight="700" fill="#00d4ff">S</text>
+  </svg>
+  <!-- Divider -->
+  <line x1="47" y1="10" x2="47" y2="34" stroke="#1e3a5f" stroke-width="1"/>
+  <!-- "Login with SCID" text -->
+  <text x="134" y="27" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif" font-size="14" font-weight="600" fill="#e2e8f0" letter-spacing="0.2">Login with SCID</text>
+</svg>

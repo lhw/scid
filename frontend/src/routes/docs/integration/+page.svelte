@@ -180,8 +180,11 @@ Authorization: Bearer ACCESS_TOKEN</pre>
 
   </div>
 
-  <div class="mt-12 flex items-center justify-between border-t border-[#1e3a5f] pt-6">
+  <div class="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-[#1e3a5f] pt-6">
     <a href="/docs" class="text-sm text-[#e2e8f0]/40 hover:text-[#00d4ff]">← Documentation</a>
-    <a href="/docs/claims" class="text-sm text-[#e2e8f0]/40 hover:text-[#00d4ff]">Claims Reference →</a>
+    <div class="flex gap-6">
+      <a href="/docs/badge" class="text-sm text-[#e2e8f0]/40 hover:text-[#00d4ff]">Badges &amp; Buttons</a>
+      <a href="/docs/claims" class="text-sm text-[#e2e8f0]/40 hover:text-[#00d4ff]">Claims Reference →</a>
+    </div>
   </div>
 </div>
