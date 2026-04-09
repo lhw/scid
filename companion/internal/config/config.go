@@ -25,7 +25,17 @@ type Config struct {
 	PocketIDInternalURL string
 
 	// OIDCIssuerURL is the OIDC issuer URL used for auth discovery and token exchange.
+	// This may be an internal URL (e.g. http://pocket-id:1411) to avoid TLS issues.
 	OIDCIssuerURL string
+
+	// PublicOIDCIssuerURL is the browser-facing issuer URL injected into the frontend
+	// and used to validate the `iss` claim in JWTs. Defaults to OIDCIssuerURL.
+	PublicOIDCIssuerURL string
+
+	// OIDCInsecureTLS disables TLS certificate verification for all OIDC/OAuth2
+	// HTTP calls. Must only be set in local development (e.g. when using mkcert).
+	// Never set this in production.
+	OIDCInsecureTLS bool
 
 	// PocketIDAdminAPIKey is the admin API key for Pocket ID.
 	PocketIDAdminAPIKey string
@@ -77,12 +87,17 @@ type Config struct {
 // Load reads configuration from environment variables, applying defaults where
 // appropriate. It returns an error if any required variable is missing.
 func Load() (*Config, error) {
+	oidcIssuerURL := getEnv("POCKET_ID_ISSUER_URL", getEnv("PUBLIC_POCKET_ID_URL", getEnv("POCKET_ID_INTERNAL_URL", "http://pocket-id:3000")))
+	publicOIDCIssuerURL := getEnv("PUBLIC_POCKET_ID_URL", oidcIssuerURL)
+
 	cfg := &Config{
 		DatabaseURL:         getEnv("DATABASE_URL", ""),
 		ListenAddr:          getEnv("LISTEN_ADDR", ":8080"),
 		DatabasePath:        getEnv("DATABASE_PATH", "/data/scid.db"),
 		PocketIDInternalURL: getEnv("POCKET_ID_INTERNAL_URL", "http://pocket-id:3000"),
-		OIDCIssuerURL:       getEnv("POCKET_ID_ISSUER_URL", getEnv("PUBLIC_POCKET_ID_URL", getEnv("POCKET_ID_INTERNAL_URL", "http://pocket-id:3000"))),
+		OIDCIssuerURL:       oidcIssuerURL,
+		PublicOIDCIssuerURL: publicOIDCIssuerURL,
+		OIDCInsecureTLS:     getEnv("OIDC_INSECURE_TLS", "false") == "true",
 		PocketIDAdminAPIKey: os.Getenv("POCKET_ID_ADMIN_API_KEY"),
 		OIDCClientID:        getEnv("PUBLIC_OIDC_CLIENT_ID", "scid-frontend"),
 		OIDCClientSecret:    os.Getenv("OIDC_CLIENT_SECRET"),

@@ -17,7 +17,7 @@
 # Pocket ID — the main OIDC provider (login, passkeys, consent)
 # We inject a <style> block into every HTML response to hide the first name,
 # last name, and display name fields — Pocket ID has no native toggle for this.
-dev-auth.scid.my {
+auth-dev.scid.my {
     tls /certs/scid.my+1.pem /certs/scid.my+1-key.pem
 
     # Inject styles and a fixed "Return to SCID" back-button into every HTML page.

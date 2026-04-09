@@ -121,6 +121,7 @@ export interface AppRegistration {
   has_logo: boolean;
   status: string; // "pending" | "approved" | "rejected"
   rejection_reason?: string;
+  category?: string;
   created_at: string;
 }
 
@@ -134,6 +135,7 @@ export interface CreateAppRequest {
   pkce_required: boolean;
   verified_only: boolean;
   listed?: boolean;
+  category?: string;
 }
 
 export interface DirectoryApp {
@@ -143,6 +145,8 @@ export interface DirectoryApp {
   launch_url: string;
   has_logo: boolean;
   verified_only: boolean;
+  category?: string;
+  created_at: string;
 }
 
 export async function listApps(): Promise<AppRegistration[]> {

@@ -26,6 +26,7 @@
   let formPkceRequired = $state(false);
   let formVerifiedOnly = $state(false);
   let formLogoFile = $state<File | null>(null);
+  let formCategory = $state('');
   let formErrors = $state<Record<string, string>>({});
 
   const allowedLogoTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
@@ -92,6 +93,7 @@
         is_public: formIsPublic,
         pkce_required: formPkceRequired,
         verified_only: formVerifiedOnly,
+        category: formCategory || undefined,
       };
       const created = await createApp(req);
       // Upload logo if one was selected (non-fatal if it fails).
@@ -128,6 +130,7 @@
     formPkceRequired = false;
     formVerifiedOnly = false;
     formLogoFile = null;
+    formCategory = '';
     formErrors = {};
   }
 
@@ -218,6 +221,23 @@
               placeholder="A short description shown in the app directory"
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30 resize-none"
             ></textarea>
+          </Field>
+
+          <!-- Category -->
+          <Field forId="app-category" label="Category">
+            <select
+              id="app-category"
+              bind:value={formCategory}
+              class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30"
+            >
+              <option value="">— choose a category —</option>
+              <option value="community">Community</option>
+              <option value="fleet">Fleet &amp; Org</option>
+              <option value="trading">Trading</option>
+              <option value="roleplay">Roleplay</option>
+              <option value="stats">Stats &amp; Data</option>
+              <option value="tools">Tools &amp; Utilities</option>
+            </select>
           </Field>
           <Field label="Redirect URIs" required error={formErrors.redirectURIs}>
             <div class="space-y-2">

@@ -6,7 +6,7 @@ services:
     image: ghcr.io/pocket-id/pocket-id:latest
     restart: unless-stopped
     environment:
-      APP_URL: https://dev-auth.scid.my
+      APP_URL: https://auth-dev.scid.my
       TRUST_PROXY: "true"
       ENCRYPTION_KEY: ${ENCRYPTION_KEY}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY}
@@ -30,6 +30,11 @@ services:
       LISTEN_ADDR: ":8080"
       DATABASE_PATH: /data/scid.db
       POCKET_ID_INTERNAL_URL: http://pocket-id:1411
+      POCKET_ID_ISSUER_URL: http://pocket-id:1411
+      PUBLIC_POCKET_ID_URL: https://auth-dev.scid.my
+      # mkcert TLS certs are not trusted by the companion container; skip
+      # verification for OIDC token exchange in local dev only.
+      OIDC_INSECURE_TLS: "true"
       POCKET_ID_ADMIN_API_KEY: ${POCKET_ID_ADMIN_API_KEY}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
       CORS_ALLOWED_ORIGINS: https://dev.scid.my,http://localhost:5173
@@ -59,7 +64,7 @@ services:
       # Tell the Vite dev proxy where the companion lives inside the stack
       VITE_API_BASE: http://companion:8080
       # OIDC client config baked into the SvelteKit bundle at build/dev time
-      PUBLIC_POCKET_ID_URL: https://dev-auth.scid.my
+      PUBLIC_POCKET_ID_URL: https://auth-dev.scid.my
       PUBLIC_OIDC_CLIENT_ID: 3f8bd72a-4ae6-4656-83cd-44f0f159b4d5
       # Cloudflare Turnstile site key — empty string disables the widget
       PUBLIC_TURNSTILE_SITE_KEY: ${PUBLIC_TURNSTILE_SITE_KEY:-}

@@ -42,6 +42,7 @@
   let editPkceRequired = $state(false);
   let editVerifiedOnly = $state(false);
   let editListed = $state(false);
+  let editCategory = $state('');
   let editErrors = $state<Record<string, string>>({});
 
   onMount(async () => {
@@ -77,6 +78,7 @@
     editPkceRequired = app.pkce_required;
     editVerifiedOnly = app.verified_only;
     editListed = app.listed ?? false;
+    editCategory = app.category ?? '';
     editErrors = {};
     editing = true;
   }
@@ -112,6 +114,7 @@
         pkce_required: editPkceRequired,
         verified_only: editVerifiedOnly,
         listed: editListed,
+        category: editCategory || undefined,
       };
       app = await updateApp(appId, req);
       editing = false;
@@ -351,6 +354,22 @@
               placeholder="A short description shown in the app directory"
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30 resize-none"
             ></textarea>
+          </Field>
+
+          <Field forId="edit-app-category" label="Category">
+            <select
+              id="edit-app-category"
+              bind:value={editCategory}
+              class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30"
+            >
+              <option value="">— choose a category —</option>
+              <option value="community">Community</option>
+              <option value="fleet">Fleet &amp; Org</option>
+              <option value="trading">Trading</option>
+              <option value="roleplay">Roleplay</option>
+              <option value="stats">Stats &amp; Data</option>
+              <option value="tools">Tools &amp; Utilities</option>
+            </select>
           </Field>
 
           <Field label="Redirect URIs" required error={editErrors.redirectURIs}>

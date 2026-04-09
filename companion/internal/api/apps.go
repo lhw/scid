@@ -30,6 +30,16 @@ const maxAppsPerUser = 5
 
 // --- shared request/response types ---
 
+// knownCategories is the exhaustive set of accepted category slugs.
+var knownCategories = map[string]bool{
+	"community": true,
+	"fleet":     true,
+	"trading":   true,
+	"roleplay":  true,
+	"stats":     true,
+	"tools":     true,
+}
+
 type createAppRequest struct {
 	Name         string   `json:"name"`
 	Description  string   `json:"description"`
@@ -40,6 +50,7 @@ type createAppRequest struct {
 	PkceRequired bool     `json:"pkce_required"`
 	VerifiedOnly bool     `json:"verified_only"`
 	Listed       bool     `json:"listed"`
+	Category     string   `json:"category"`
 }
 
 type appResponse struct {
@@ -58,6 +69,7 @@ type appResponse struct {
 	HasLogo         bool     `json:"has_logo"`
 	Status          string   `json:"status"`
 	RejectionReason string   `json:"rejection_reason,omitempty"`
+	Category        string   `json:"category,omitempty"`
 	CreatedAt       string   `json:"created_at"`
 }
 
@@ -94,6 +106,7 @@ func buildAppResponse(client *pocketid.OIDCClient, reg *store.AppRegistration, s
 		HasLogo:         client.HasLogo,
 		Status:          status,
 		RejectionReason: reg.RejectionReason,
+		Category:        reg.Category,
 		CreatedAt:       reg.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }
@@ -113,6 +126,9 @@ func validateCreateAppRequest(req createAppRequest) string {
 	}
 	if len([]rune(req.Description)) > 200 {
 		return "description must be 200 characters or fewer"
+	}
+	if req.Category != "" && !knownCategories[req.Category] {
+		return "invalid category"
 	}
 	if req.LaunchURL != "" {
 		if !strings.HasPrefix(req.LaunchURL, "https://") {
@@ -398,6 +414,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		// for approved apps only.
 		Listed:      req.Listed,
 		Description: strings.TrimSpace(req.Description),
+		Category:    req.Category,
 		Status:      status,
 		CreatedAt:   time.Now().UTC(),
 	}
@@ -638,6 +655,15 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		reg.Description = newDescription
+	}
+
+	if req.Category != reg.Category {
+		if err := s.store.UpdateAppRegistrationCategory(r.Context(), clientID, req.Category); err != nil {
+			slog.ErrorContext(r.Context(), "update app registration category failed", "client_id", clientID, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		reg.Category = req.Category
 	}
 
 	if statusUpdated && reg.Status == "pending" {
@@ -959,6 +985,8 @@ type directoryAppResponse struct {
 	LaunchURL    string `json:"launch_url"`
 	HasLogo      bool   `json:"has_logo"`
 	VerifiedOnly bool   `json:"verified_only"`
+	Category     string `json:"category,omitempty"`
+	CreatedAt    string `json:"created_at"`
 }
 
 func (s *Server) handleListDirectoryApps(w http.ResponseWriter, r *http.Request) {
@@ -991,6 +1019,8 @@ func (s *Server) handleListDirectoryApps(w http.ResponseWriter, r *http.Request)
 			LaunchURL:    launchURL,
 			HasLogo:      client.HasLogo,
 			VerifiedOnly: reg.VerifiedOnly,
+			Category:     reg.Category,
+			CreatedAt:    reg.CreatedAt.UTC().Format(time.RFC3339),
 		})
 	}
 

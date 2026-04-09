@@ -60,7 +60,7 @@ func New(cfg *config.Config, st *store.Store) *Server {
 	s := &Server{
 		cfg:      cfg,
 		store:    st,
-		auth:     oidcclient.New(cfg.OIDCIssuerURL, cfg.OIDCClientID, cfg.OIDCClientSecret),
+		auth:     oidcclient.New(cfg.OIDCIssuerURL, cfg.PublicOIDCIssuerURL, cfg.OIDCClientID, cfg.OIDCClientSecret, cfg.OIDCInsecureTLS),
 		pid:      pocketid.New(cfg.PocketIDInternalURL, cfg.PocketIDAdminAPIKey),
 		scraper:  rsi.New(),
 		limiter:  newRateLimiter(),
@@ -204,7 +204,7 @@ func spaHandler(fsys fs.FS) http.Handler {
 // loaded by app.html so the Docker image stays fully generic.
 func (s *Server) handleRuntimeConfig(w http.ResponseWriter, r *http.Request) {
 	configJSON, err := json.Marshal(map[string]string{
-		"PUBLIC_POCKET_ID_URL":      s.cfg.OIDCIssuerURL,
+		"PUBLIC_POCKET_ID_URL":      s.cfg.PublicOIDCIssuerURL,
 		"PUBLIC_OIDC_CLIENT_ID":     s.cfg.OIDCClientID,
 		"PUBLIC_TURNSTILE_SITE_KEY": s.cfg.TurnstileSiteKey,
 	})
