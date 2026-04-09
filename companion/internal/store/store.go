@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS reports (
 CREATE TABLE IF NOT EXISTS app_screenshots (
     id TEXT PRIMARY KEY,
     oidc_client_id TEXT NOT NULL,
-    data BLOB NOT NULL,
+    data BYTEA NOT NULL,
     content_type TEXT NOT NULL DEFAULT 'image/png',
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
