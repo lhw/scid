@@ -110,6 +110,7 @@ export interface AppRegistration {
   client_secret?: string; // only present on create or rotate
   name: string;
   description?: string;
+  long_description?: string;
   owner_username?: string; // only present in admin context
   launch_url?: string;
   redirect_uris: string[];
@@ -128,6 +129,7 @@ export interface AppRegistration {
 export interface CreateAppRequest {
   name: string;
   description?: string;
+  long_description?: string;
   launch_url?: string;
   redirect_uris: string[];
   logout_uris: string[];
@@ -142,11 +144,18 @@ export interface DirectoryApp {
   id: string;
   name: string;
   description?: string;
+  long_description?: string;
   launch_url: string;
   has_logo: boolean;
   verified_only: boolean;
   category?: string;
   created_at: string;
+}
+
+export interface ScreenshotMeta {
+  id: string;
+  content_type: string;
+  sort_order: number;
 }
 
 export async function listApps(): Promise<AppRegistration[]> {
@@ -208,6 +217,34 @@ export async function uploadAppLogo(id: string, file: File): Promise<void> {
   const res = await fetch(`/api/apps/${encodeURIComponent(id)}/logo`, {
     method: "PUT",
     body: form,
+  });
+  await throwIfError(res);
+}
+
+export async function listScreenshots(appId: string): Promise<ScreenshotMeta[]> {
+  const res = await fetch(`/api/apps/${encodeURIComponent(appId)}/screenshots`);
+  await throwIfError(res);
+  return res.json();
+}
+
+export function screenshotUrl(appId: string, ssId: string): string {
+  return `/api/apps/${encodeURIComponent(appId)}/screenshots/${encodeURIComponent(ssId)}`;
+}
+
+export async function uploadScreenshot(appId: string, file: File): Promise<ScreenshotMeta> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`/api/apps/${encodeURIComponent(appId)}/screenshots`, {
+    method: "POST",
+    body: form,
+  });
+  await throwIfError(res);
+  return res.json();
+}
+
+export async function deleteScreenshot(appId: string, ssId: string): Promise<void> {
+  const res = await fetch(`/api/apps/${encodeURIComponent(appId)}/screenshots/${encodeURIComponent(ssId)}`, {
+    method: "DELETE",
   });
   await throwIfError(res);
 }

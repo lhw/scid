@@ -4,11 +4,11 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import {
-    AppWindow, RotateCcw, Trash2, Pencil, Plus, ShieldCheck, Upload, X
+    AppWindow, RotateCcw, Trash2, Pencil, Plus, ShieldCheck, Upload, X, Image
   } from '@lucide/svelte';
   import type { PageData } from './$types';
-  import type { AppRegistration, CreateAppRequest } from '$lib/utils/api';
-  import { getApp, updateApp, deleteApp, rotateSecret, uploadAppLogo } from '$lib/utils/api';
+  import type { AppRegistration, CreateAppRequest, ScreenshotMeta } from '$lib/utils/api';
+  import { getApp, updateApp, deleteApp, rotateSecret, uploadAppLogo, listScreenshots, uploadScreenshot, deleteScreenshot, screenshotUrl } from '$lib/utils/api';
   import CopyButton from '$lib/components/CopyButton.svelte';
   import Field from '$lib/components/Field.svelte';
   import Panel from '$lib/components/Panel.svelte';
@@ -28,6 +28,11 @@
   let uploadingLogo = $state(false);
   const allowedLogoTypes = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
+  // Screenshots
+  let screenshots = $state<ScreenshotMeta[]>([]);
+  let uploadingScreenshot = $state(false);
+  let deletingScreenshot = $state<string | null>(null);
+
   // Once-shown secret (from URL after create, or after rotation)
   let shownSecret = $state('');
   let secretCopied = $state(false);
@@ -35,6 +40,7 @@
   // Edit form state
   let editName = $state('');
   let editDescription = $state('');
+  let editLongDescription = $state('');
   let editLaunchURL = $state('');
   let editRedirectURIs = $state(['']);
   let editLogoutURIs = $state<string[]>([]);
@@ -56,6 +62,7 @@
 
     try {
       app = await getApp(appId);
+      screenshots = await listScreenshots(appId);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load application');
     } finally {
@@ -71,6 +78,7 @@
     if (!app) return;
     editName = app.name;
     editDescription = app.description ?? '';
+    editLongDescription = app.long_description ?? '';
     editLaunchURL = app.launch_url ?? '';
     editRedirectURIs = app.redirect_uris.length ? [...app.redirect_uris] : [''];
     editLogoutURIs = [...app.logout_uris];
@@ -107,6 +115,7 @@
       const req: CreateAppRequest = {
         name: editName.trim(),
         description: editDescription.trim() || undefined,
+        long_description: editLongDescription.trim() || undefined,
         launch_url: editLaunchURL.trim() || undefined,
         redirect_uris: editRedirectURIs.filter(u => u.trim()),
         logout_uris: editLogoutURIs.filter(u => u.trim()),
@@ -191,6 +200,45 @@
   }
   function removeEditLogoutURI(i: number) {
     editLogoutURIs = editLogoutURIs.filter((_, idx) => idx !== i);
+  }
+
+  async function handleScreenshotUpload(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!allowedLogoTypes.has(file.type)) {
+      toast.error('Screenshot must be a PNG, JPEG, or WebP image');
+      input.value = '';
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Screenshot must be 2 MB or smaller');
+      input.value = '';
+      return;
+    }
+    uploadingScreenshot = true;
+    try {
+      const meta = await uploadScreenshot(appId, file);
+      screenshots = [...screenshots, meta];
+      toast.success('Screenshot uploaded');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      uploadingScreenshot = false;
+      input.value = '';
+    }
+  }
+
+  async function handleDeleteScreenshot(ssId: string) {
+    deletingScreenshot = ssId;
+    try {
+      await deleteScreenshot(appId, ssId);
+      screenshots = screenshots.filter(s => s.id !== ssId);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Delete failed');
+    } finally {
+      deletingScreenshot = null;
+    }
   }
 </script>
 
@@ -349,9 +397,16 @@
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30" />
           </Field>
 
-          <Field forId="edit-app-description" label="Description" hint={`${editDescription.length}/200`}>
+          <Field forId="edit-app-description" label="Short Description" hint={`${editDescription.length}/200`}>
             <textarea id="edit-app-description" bind:value={editDescription} maxlength="200" rows="2"
               placeholder="A short description shown in the app directory"
+              class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30 resize-none"
+            ></textarea>
+          </Field>
+
+          <Field forId="edit-app-long-description" label="Long Description" hint={`${editLongDescription.length}/2000`}>
+            <textarea id="edit-app-long-description" bind:value={editLongDescription} maxlength="2000" rows="5"
+              placeholder="A detailed description shown when a visitor clicks your app in the directory"
               class="w-full rounded-lg border border-[#1e3a5f] bg-[#0a0e1a] px-3 py-2 text-sm text-[#e2e8f0] placeholder-[#e2e8f0]/30 focus:border-[#00d4ff]/50 focus:outline-none focus:ring-1 focus:ring-[#00d4ff]/30 resize-none"
             ></textarea>
           </Field>
@@ -470,6 +525,44 @@
             Cancel
           </button>
         </div>
+      </Panel>
+
+      <!-- Screenshots management (only visible in edit mode) -->
+      <Panel class="mt-6 p-6">
+        <div class="mb-4 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <Image class="h-4 w-4 text-[#00d4ff]/60" />
+            <h3 class="text-sm font-medium text-[#e2e8f0]">Screenshots</h3>
+            <span class="rounded-full bg-[#1e3a5f] px-2 py-0.5 text-xs text-[#e2e8f0]/60">{screenshots.length}/5</span>
+          </div>
+          {#if screenshots.length < 5}
+            <label class="flex cursor-pointer items-center gap-1.5 rounded-lg border border-[#1e3a5f] px-3 py-1.5 text-xs text-[#e2e8f0]/60 transition-colors hover:border-[#00d4ff]/40 hover:text-[#00d4ff] {uploadingScreenshot ? 'pointer-events-none opacity-50' : ''}">
+              <input type="file" accept="image/png,image/jpeg,image/webp" class="sr-only" onchange={handleScreenshotUpload} disabled={uploadingScreenshot} />
+              {uploadingScreenshot ? 'Uploading…' : '+ Add Screenshot'}
+            </label>
+          {/if}
+        </div>
+
+        {#if screenshots.length === 0}
+          <p class="text-sm text-[#e2e8f0]/30">No screenshots yet. Add up to 5 images (PNG, JPEG, or WebP, max 2 MB each).</p>
+        {:else}
+          <div class="flex flex-wrap gap-3">
+            {#each screenshots as ss}
+              <div class="group relative h-28 w-44 overflow-hidden rounded-lg border border-[#1e3a5f]">
+                <img src={screenshotUrl(appId, ss.id)} alt="Screenshot" class="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onclick={() => handleDeleteScreenshot(ss.id)}
+                  disabled={deletingScreenshot === ss.id}
+                  class="absolute right-1 top-1 rounded bg-black/60 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-red-600/80 disabled:opacity-50"
+                  aria-label="Delete screenshot"
+                >
+                  <Trash2 class="h-3 w-3" />
+                </button>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </Panel>
     {:else}
       <!-- Detail view -->

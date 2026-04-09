@@ -94,6 +94,18 @@ CREATE TABLE IF NOT EXISTS reports (
     reviewed_by TEXT NOT NULL DEFAULT '',
     reviewed_at TEXT NOT NULL DEFAULT ''
 );
+
+-- app_screenshots stores screenshot images for listed apps.
+-- Up to 5 screenshots per app, sorted by sort_order ascending.
+CREATE TABLE IF NOT EXISTS app_screenshots (
+    id TEXT PRIMARY KEY,
+    oidc_client_id TEXT NOT NULL,
+    data BLOB NOT NULL,
+    content_type TEXT NOT NULL DEFAULT 'image/png',
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS app_screenshots_client_idx ON app_screenshots(oidc_client_id, sort_order);
 `
 
 const sqliteSessionSchema = `
@@ -124,6 +136,7 @@ ALTER TABLE app_registrations ADD COLUMN description TEXT NOT NULL DEFAULT '';
 ALTER TABLE org_cache ADD COLUMN logo_blocked INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE org_cache ADD COLUMN logo_url TEXT NOT NULL DEFAULT '';
 ALTER TABLE app_registrations ADD COLUMN category TEXT NOT NULL DEFAULT '';
+ALTER TABLE app_registrations ADD COLUMN long_description TEXT NOT NULL DEFAULT '';
 `
 
 // VerificationToken represents a row in the verification_tokens table.
@@ -369,6 +382,7 @@ type AppRegistration struct {
 	Status          string // "pending" | "approved" | "rejected"
 	RejectionReason string
 	Description     string // optional short description shown in the directory
+	LongDescription string // optional long description shown in the app detail modal
 	Category        string // one of the known category slugs, or empty
 	CreatedAt       time.Time
 }
@@ -376,8 +390,8 @@ type AppRegistration struct {
 // CreateAppRegistration inserts a new app registration row.
 func (s *Store) CreateAppRegistration(ctx context.Context, reg *AppRegistration) error {
 	const q = `
-INSERT INTO app_registrations (id, oidc_client_id, owner_user_id, verified_only, listed, status, rejection_reason, description, category, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+INSERT INTO app_registrations (id, oidc_client_id, owner_user_id, verified_only, listed, status, rejection_reason, description, long_description, category, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	verifiedOnly := 0
 	if reg.VerifiedOnly {
 		verifiedOnly = 1
@@ -391,7 +405,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		status = "approved"
 	}
 	_, err := s.execContext(ctx, q,
-		reg.ID, reg.OIDCClientID, reg.OwnerUserID, verifiedOnly, listed, status, reg.RejectionReason, reg.Description, reg.Category,
+		reg.ID, reg.OIDCClientID, reg.OwnerUserID, verifiedOnly, listed, status, reg.RejectionReason, reg.Description, reg.LongDescription, reg.Category,
 		reg.CreatedAt.UTC().Format(time.RFC3339))
 	if err != nil {
 		return fmt.Errorf("insert app registration: %w", err)
@@ -403,7 +417,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 // Returns ErrNotFound if no matching row exists.
 func (s *Store) GetAppRegistrationByClientID(ctx context.Context, oidcClientID string) (*AppRegistration, error) {
 	const q = `
-SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), COALESCE(category,''), created_at
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), COALESCE(long_description,''), COALESCE(category,''), created_at
 FROM app_registrations
 WHERE oidc_client_id = ?`
 	return scanAppRegistration(s.queryRowContext(ctx, q, oidcClientID))
@@ -412,7 +426,7 @@ WHERE oidc_client_id = ?`
 // ListAppRegistrationsByOwner returns all app registrations for a given user.
 func (s *Store) ListAppRegistrationsByOwner(ctx context.Context, ownerUserID string) ([]AppRegistration, error) {
 	const q = `
-SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), COALESCE(category,''), created_at
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), COALESCE(long_description,''), COALESCE(category,''), created_at
 FROM app_registrations
 WHERE owner_user_id = ?
 ORDER BY created_at ASC`
@@ -481,10 +495,19 @@ func (s *Store) UpdateAppRegistrationCategory(ctx context.Context, oidcClientID,
 	return nil
 }
 
+// UpdateAppRegistrationLongDescription updates the long_description for an app.
+func (s *Store) UpdateAppRegistrationLongDescription(ctx context.Context, oidcClientID, longDescription string) error {
+	const q = `UPDATE app_registrations SET long_description = ? WHERE oidc_client_id = ?`
+	if _, err := s.execContext(ctx, q, longDescription, oidcClientID); err != nil {
+		return fmt.Errorf("update app registration long_description: %w", err)
+	}
+	return nil
+}
+
 // ListListedApps returns all approved apps that have opted into the public directory.
 func (s *Store) ListListedApps(ctx context.Context) ([]AppRegistration, error) {
 	const q = `
-SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), COALESCE(category,''), created_at
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), COALESCE(long_description,''), COALESCE(category,''), created_at
 FROM app_registrations
 WHERE COALESCE(listed,0) = 1 AND COALESCE(status,'approved') = 'approved'
 ORDER BY created_at ASC`
@@ -494,7 +517,7 @@ ORDER BY created_at ASC`
 // ListPendingAppRegistrations returns all app registrations with status='pending'.
 func (s *Store) ListPendingAppRegistrations(ctx context.Context) ([]AppRegistration, error) {
 	const q = `
-SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), COALESCE(category,''), created_at
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), COALESCE(long_description,''), COALESCE(category,''), created_at
 FROM app_registrations
 WHERE COALESCE(status,'approved') = 'pending'
 ORDER BY created_at ASC`
@@ -504,7 +527,7 @@ ORDER BY created_at ASC`
 // ListAllAppRegistrations returns all app registrations ordered by creation date.
 func (s *Store) ListAllAppRegistrations(ctx context.Context) ([]AppRegistration, error) {
 	const q = `
-SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), COALESCE(category,''), created_at
+SELECT id, oidc_client_id, owner_user_id, verified_only, COALESCE(listed,0), COALESCE(status,'approved'), COALESCE(rejection_reason,''), COALESCE(description,''), COALESCE(long_description,''), COALESCE(category,''), created_at
 FROM app_registrations
 ORDER BY created_at DESC`
 	return queryAppRegistrations(s, ctx, q)
@@ -532,7 +555,7 @@ func scanAppRegistration(row *sql.Row) (*AppRegistration, error) {
 	var reg AppRegistration
 	var verifiedOnly, listed int
 	var createdAt string
-	err := row.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &listed, &reg.Status, &reg.RejectionReason, &reg.Description, &reg.Category, &createdAt)
+	err := row.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &listed, &reg.Status, &reg.RejectionReason, &reg.Description, &reg.LongDescription, &reg.Category, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, ErrNotFound
 	}
@@ -549,7 +572,7 @@ func scanAppRegistrationRow(rows *sql.Rows) (*AppRegistration, error) {
 	var reg AppRegistration
 	var verifiedOnly, listed int
 	var createdAt string
-	err := rows.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &listed, &reg.Status, &reg.RejectionReason, &reg.Description, &reg.Category, &createdAt)
+	err := rows.Scan(&reg.ID, &reg.OIDCClientID, &reg.OwnerUserID, &verifiedOnly, &listed, &reg.Status, &reg.RejectionReason, &reg.Description, &reg.LongDescription, &reg.Category, &createdAt)
 	if err != nil {
 		return nil, fmt.Errorf("scan app registration: %w", err)
 	}
@@ -1008,4 +1031,112 @@ func scanReportRow(rows *sql.Rows) (Report, error) {
 		r.ReviewedAt, _ = parseTime(reviewedAt)
 	}
 	return r, nil
+}
+
+// ---- App Screenshots ----
+
+// AppScreenshot represents a single screenshot stored for a listed app.
+type AppScreenshot struct {
+	ID           string
+	OIDCClientID string
+	Data         []byte
+	ContentType  string
+	SortOrder    int
+	CreatedAt    time.Time
+}
+
+// CountAppScreenshots returns the number of screenshots for an app.
+func (s *Store) CountAppScreenshots(ctx context.Context, oidcClientID string) (int, error) {
+	const q = `SELECT COUNT(*) FROM app_screenshots WHERE oidc_client_id = ?`
+	var count int
+	if err := s.queryRowContext(ctx, q, oidcClientID).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count app screenshots: %w", err)
+	}
+	return count, nil
+}
+
+// CreateAppScreenshot inserts a new screenshot row.
+func (s *Store) CreateAppScreenshot(ctx context.Context, ss *AppScreenshot) error {
+	const q = `
+INSERT INTO app_screenshots (id, oidc_client_id, data, content_type, sort_order, created_at)
+VALUES (?, ?, ?, ?, ?, ?)`
+	_, err := s.execContext(ctx, q,
+		ss.ID, ss.OIDCClientID, ss.Data, ss.ContentType, ss.SortOrder,
+		ss.CreatedAt.UTC().Format(time.RFC3339))
+	if err != nil {
+		return fmt.Errorf("insert app screenshot: %w", err)
+	}
+	return nil
+}
+
+// AppScreenshotMeta holds metadata (no image data) about a screenshot.
+type AppScreenshotMeta struct {
+	ID          string
+	ContentType string
+	SortOrder   int
+}
+
+// ListAppScreenshots returns screenshot metadata (without image data) for an app, ordered by sort_order.
+func (s *Store) ListAppScreenshots(ctx context.Context, oidcClientID string) ([]AppScreenshotMeta, error) {
+	const q = `SELECT id, content_type, sort_order FROM app_screenshots WHERE oidc_client_id = ? ORDER BY sort_order ASC`
+	rows, err := s.queryContext(ctx, q, oidcClientID)
+	if err != nil {
+		return nil, fmt.Errorf("list app screenshots: %w", err)
+	}
+	defer rows.Close()
+
+	var result []AppScreenshotMeta
+	for rows.Next() {
+		var m AppScreenshotMeta
+		if err := rows.Scan(&m.ID, &m.ContentType, &m.SortOrder); err != nil {
+			return nil, fmt.Errorf("scan app screenshot meta: %w", err)
+		}
+		result = append(result, m)
+	}
+	return result, rows.Err()
+}
+
+// GetAppScreenshot retrieves a single screenshot by ID, including its image data.
+// Returns ErrNotFound if no matching row exists.
+func (s *Store) GetAppScreenshot(ctx context.Context, id string) (*AppScreenshot, error) {
+	const q = `SELECT id, oidc_client_id, data, content_type, sort_order, created_at FROM app_screenshots WHERE id = ?`
+	var ss AppScreenshot
+	var createdAt string
+	err := s.queryRowContext(ctx, q, id).Scan(&ss.ID, &ss.OIDCClientID, &ss.Data, &ss.ContentType, &ss.SortOrder, &createdAt)
+	if err == sql.ErrNoRows {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get app screenshot: %w", err)
+	}
+	ss.CreatedAt, _ = parseTime(createdAt)
+	return &ss, nil
+}
+
+// DeleteAppScreenshot removes a screenshot by ID and returns the oidc_client_id
+// so the caller can verify ownership. Returns ErrNotFound if not found.
+func (s *Store) DeleteAppScreenshot(ctx context.Context, id string) (string, error) {
+	const qSelect = `SELECT oidc_client_id FROM app_screenshots WHERE id = ?`
+	var clientID string
+	err := s.queryRowContext(ctx, qSelect, id).Scan(&clientID)
+	if err == sql.ErrNoRows {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("get screenshot client: %w", err)
+	}
+	const qDelete = `DELETE FROM app_screenshots WHERE id = ?`
+	if _, err := s.execContext(ctx, qDelete, id); err != nil {
+		return "", fmt.Errorf("delete app screenshot: %w", err)
+	}
+	return clientID, nil
+}
+
+// DeleteAppScreenshots removes all screenshots for an app.
+func (s *Store) DeleteAppScreenshots(ctx context.Context, oidcClientID string) error {
+	const q = `DELETE FROM app_screenshots WHERE oidc_client_id = ?`
+	if _, err := s.execContext(ctx, q, oidcClientID); err != nil {
+		return fmt.Errorf("delete app screenshots: %w", err)
+	}
+	return nil
 }

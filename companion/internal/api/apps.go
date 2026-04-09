@@ -28,6 +28,12 @@ const maxLogoSize = 1 << 20
 // maxAppsPerUser is how many OIDC clients a single verified user may register.
 const maxAppsPerUser = 5
 
+// maxScreenshots is the maximum number of screenshots per app.
+const maxScreenshots = 5
+
+// maxScreenshotSize is the maximum accepted screenshot upload size (2 MiB).
+const maxScreenshotSize = 2 << 20
+
 // --- shared request/response types ---
 
 // knownCategories is the exhaustive set of accepted category slugs.
@@ -41,16 +47,17 @@ var knownCategories = map[string]bool{
 }
 
 type createAppRequest struct {
-	Name         string   `json:"name"`
-	Description  string   `json:"description"`
-	LaunchURL    string   `json:"launch_url"`
-	RedirectURIs []string `json:"redirect_uris"`
-	LogoutURIs   []string `json:"logout_uris"`
-	IsPublic     bool     `json:"is_public"`
-	PkceRequired bool     `json:"pkce_required"`
-	VerifiedOnly bool     `json:"verified_only"`
-	Listed       bool     `json:"listed"`
-	Category     string   `json:"category"`
+	Name            string   `json:"name"`
+	Description     string   `json:"description"`
+	LongDescription string   `json:"long_description"`
+	LaunchURL       string   `json:"launch_url"`
+	RedirectURIs    []string `json:"redirect_uris"`
+	LogoutURIs      []string `json:"logout_uris"`
+	IsPublic        bool     `json:"is_public"`
+	PkceRequired    bool     `json:"pkce_required"`
+	VerifiedOnly    bool     `json:"verified_only"`
+	Listed          bool     `json:"listed"`
+	Category        string   `json:"category"`
 }
 
 type appResponse struct {
@@ -58,6 +65,7 @@ type appResponse struct {
 	ClientSecret    string   `json:"client_secret,omitempty"`
 	Name            string   `json:"name"`
 	Description     string   `json:"description,omitempty"`
+	LongDescription string   `json:"long_description,omitempty"`
 	OwnerUsername   string   `json:"owner_username,omitempty"`
 	LaunchURL       string   `json:"launch_url,omitempty"`
 	RedirectURIs    []string `json:"redirect_uris"`
@@ -96,6 +104,7 @@ func buildAppResponse(client *pocketid.OIDCClient, reg *store.AppRegistration, s
 		ClientSecret:    secret,
 		Name:            client.Name,
 		Description:     reg.Description,
+		LongDescription: reg.LongDescription,
 		LaunchURL:       launchURL,
 		RedirectURIs:    redirectURIs,
 		LogoutURIs:      logoutURIs,
@@ -126,6 +135,9 @@ func validateCreateAppRequest(req createAppRequest) string {
 	}
 	if len([]rune(req.Description)) > 200 {
 		return "description must be 200 characters or fewer"
+	}
+	if len([]rune(req.LongDescription)) > 2000 {
+		return "long_description must be 2000 characters or fewer"
 	}
 	if req.Category != "" && !knownCategories[req.Category] {
 		return "invalid category"
@@ -412,11 +424,12 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		VerifiedOnly: req.VerifiedOnly,
 		// Persist listing intent even while pending; the directory already filters
 		// for approved apps only.
-		Listed:      req.Listed,
-		Description: strings.TrimSpace(req.Description),
-		Category:    req.Category,
-		Status:      status,
-		CreatedAt:   time.Now().UTC(),
+		Listed:          req.Listed,
+		Description:     strings.TrimSpace(req.Description),
+		LongDescription: strings.TrimSpace(req.LongDescription),
+		Category:        req.Category,
+		Status:          status,
+		CreatedAt:       time.Now().UTC(),
 	}
 	if err := s.store.CreateAppRegistration(r.Context(), reg); err != nil {
 		slog.ErrorContext(r.Context(), "store app registration failed", "client_id", client.ID, "err", err)
@@ -657,6 +670,16 @@ func (s *Server) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		reg.Description = newDescription
 	}
 
+	newLongDescription := strings.TrimSpace(req.LongDescription)
+	if newLongDescription != reg.LongDescription {
+		if err := s.store.UpdateAppRegistrationLongDescription(r.Context(), clientID, newLongDescription); err != nil {
+			slog.ErrorContext(r.Context(), "update app registration long_description failed", "client_id", clientID, "err", err)
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		reg.LongDescription = newLongDescription
+	}
+
 	if req.Category != reg.Category {
 		if err := s.store.UpdateAppRegistrationCategory(r.Context(), clientID, req.Category); err != nil {
 			slog.ErrorContext(r.Context(), "update app registration category failed", "client_id", clientID, "err", err)
@@ -819,7 +842,6 @@ func (s *Server) handleOIDCClientLogo(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- GET /api/admin/apps ---
-
 func (s *Server) handleListAdminApps(w http.ResponseWriter, r *http.Request) {
 	statusFilter := r.URL.Query().Get("status") // "", "pending", "approved", "rejected"
 
@@ -976,17 +998,16 @@ func (s *Server) handleRejectApp(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- GET /api/apps/directory (public) ---
-
-// directoryAppResponse is the public view of an app in the SCID directory.
 type directoryAppResponse struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Description  string `json:"description,omitempty"`
-	LaunchURL    string `json:"launch_url"`
-	HasLogo      bool   `json:"has_logo"`
-	VerifiedOnly bool   `json:"verified_only"`
-	Category     string `json:"category,omitempty"`
-	CreatedAt    string `json:"created_at"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Description     string `json:"description,omitempty"`
+	LongDescription string `json:"long_description,omitempty"`
+	LaunchURL       string `json:"launch_url"`
+	HasLogo         bool   `json:"has_logo"`
+	VerifiedOnly    bool   `json:"verified_only"`
+	Category        string `json:"category,omitempty"`
+	CreatedAt       string `json:"created_at"`
 }
 
 func (s *Server) handleListDirectoryApps(w http.ResponseWriter, r *http.Request) {
@@ -1013,16 +1034,186 @@ func (s *Server) handleListDirectoryApps(w http.ResponseWriter, r *http.Request)
 			continue // skip apps without a launch URL
 		}
 		apps = append(apps, directoryAppResponse{
-			ID:           client.ID,
-			Name:         client.Name,
-			Description:  reg.Description,
-			LaunchURL:    launchURL,
-			HasLogo:      client.HasLogo,
-			VerifiedOnly: reg.VerifiedOnly,
-			Category:     reg.Category,
-			CreatedAt:    reg.CreatedAt.UTC().Format(time.RFC3339),
+			ID:              client.ID,
+			Name:            client.Name,
+			Description:     reg.Description,
+			LongDescription: reg.LongDescription,
+			LaunchURL:       launchURL,
+			HasLogo:         client.HasLogo,
+			VerifiedOnly:    reg.VerifiedOnly,
+			Category:        reg.Category,
+			CreatedAt:       reg.CreatedAt.UTC().Format(time.RFC3339),
 		})
 	}
 
 	writeJSON(w, http.StatusOK, apps)
+}
+
+// --- Screenshot endpoints ---
+
+// screenshotMetaResponse is the public metadata for a single screenshot.
+type screenshotMetaResponse struct {
+	ID          string `json:"id"`
+	ContentType string `json:"content_type"`
+	SortOrder   int    `json:"sort_order"`
+}
+
+// GET /api/apps/{id}/screenshots (public)
+func (s *Server) handleListScreenshots(w http.ResponseWriter, r *http.Request) {
+	clientID := chi.URLParam(r, "id")
+	metas, err := s.store.ListAppScreenshots(r.Context(), clientID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "list screenshots failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	resp := make([]screenshotMetaResponse, 0, len(metas))
+	for _, m := range metas {
+		resp = append(resp, screenshotMetaResponse{
+			ID:          m.ID,
+			ContentType: m.ContentType,
+			SortOrder:   m.SortOrder,
+		})
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// GET /api/apps/{id}/screenshots/{sid} (public)
+func (s *Server) handleGetScreenshot(w http.ResponseWriter, r *http.Request) {
+	ssID := chi.URLParam(r, "sid")
+	ss, err := s.store.GetAppScreenshot(r.Context(), ssID)
+	if err == store.ErrNotFound {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "get screenshot failed", "id", ssID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	w.Header().Set("Content-Type", ss.ContentType)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.WriteHeader(http.StatusOK)
+	w.Write(ss.Data) // nolint:errcheck
+}
+
+// POST /api/apps/{id}/screenshots (authenticated, owner)
+func (s *Server) handleUploadScreenshot(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+	clientID := chi.URLParam(r, "id")
+
+	reg, err := s.ownerRegOrNil(r, clientID, user.ID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "get app registration failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if reg == nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	count, err := s.store.CountAppScreenshots(r.Context(), clientID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "count screenshots failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if count >= maxScreenshots {
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("maximum of %d screenshots per app reached", maxScreenshots))
+		return
+	}
+
+	if err := r.ParseMultipartForm(maxScreenshotSize + 1024); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid multipart form")
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "missing file field")
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, maxScreenshotSize+1))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "could not read file")
+		return
+	}
+	if len(data) > maxScreenshotSize {
+		writeError(w, http.StatusRequestEntityTooLarge, "screenshot must be 2 MB or smaller")
+		return
+	}
+
+	contentType, ok := detectLogoContentType(data)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "unsupported image type; use PNG, JPEG, or WebP")
+		return
+	}
+
+	ssID, err := newID()
+	if err != nil {
+		slog.ErrorContext(r.Context(), "screenshot id generation failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	ss := &store.AppScreenshot{
+		ID:           ssID,
+		OIDCClientID: clientID,
+		Data:         data,
+		ContentType:  contentType,
+		SortOrder:    count,
+		CreatedAt:    time.Now().UTC(),
+	}
+	if err := s.store.CreateAppScreenshot(r.Context(), ss); err != nil {
+		slog.ErrorContext(r.Context(), "create screenshot failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, screenshotMetaResponse{
+		ID:          ss.ID,
+		ContentType: ss.ContentType,
+		SortOrder:   ss.SortOrder,
+	})
+}
+
+// DELETE /api/apps/{id}/screenshots/{sid} (authenticated, owner)
+func (s *Server) handleDeleteScreenshot(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+	clientID := chi.URLParam(r, "id")
+	ssID := chi.URLParam(r, "sid")
+
+	// Verify app ownership first.
+	reg, err := s.ownerRegOrNil(r, clientID, user.ID)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "get app registration failed", "client_id", clientID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if reg == nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	deletedClientID, err := s.store.DeleteAppScreenshot(r.Context(), ssID)
+	if err == store.ErrNotFound {
+		writeError(w, http.StatusNotFound, "screenshot not found")
+		return
+	}
+	if err != nil {
+		slog.ErrorContext(r.Context(), "delete screenshot failed", "id", ssID, "err", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	// Ensure the screenshot belongs to the claimed app.
+	if deletedClientID != clientID {
+		slog.ErrorContext(r.Context(), "screenshot client mismatch", "id", ssID, "claimed", clientID, "actual", deletedClientID)
+		writeError(w, http.StatusNotFound, "screenshot not found")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

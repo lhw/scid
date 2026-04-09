@@ -121,6 +121,9 @@ func (s *Server) buildRouter() *chi.Mux {
 	r.Get("/api/oidc/clients/{id}/logo", s.handleOIDCClientLogo)
 	// Public app directory — lists approved apps that have opted into the directory.
 	r.Get("/api/apps/directory", s.handleListDirectoryApps)
+	// Screenshot serving — public, no auth required to view screenshots.
+	r.Get("/api/apps/{id}/screenshots", s.handleListScreenshots)
+	r.Get("/api/apps/{id}/screenshots/{sid}", s.handleGetScreenshot)
 	// Public report form — accepts abuse reports for users/orgs (Turnstile required in prod).
 	r.With(s.publicRateLimitMiddleware("report", 5, 10*time.Minute)).Post("/api/report", s.handleSubmitReport)
 
@@ -137,6 +140,9 @@ func (s *Server) buildRouter() *chi.Mux {
 		r.Delete("/api/apps/{id}", s.handleDeleteApp)
 		r.With(s.authenticatedRateLimitMiddleware("secret-rotate", 5, time.Hour)).Post("/api/apps/{id}/secret", s.handleRotateSecret)
 		r.Put("/api/apps/{id}/logo", s.handleUploadLogo)
+		// Screenshot management — upload and delete require ownership.
+		r.With(s.authenticatedRateLimitMiddleware("screenshot-upload", 20, time.Hour)).Post("/api/apps/{id}/screenshots", s.handleUploadScreenshot)
+		r.Delete("/api/apps/{id}/screenshots/{sid}", s.handleDeleteScreenshot)
 		// Admin endpoints — access enforced by requireAdmin middleware.
 		r.Route("/api/admin", func(r chi.Router) {
 			r.Use(s.requireAdmin)
