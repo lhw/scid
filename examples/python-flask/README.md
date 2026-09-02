@@ -53,4 +53,4 @@ A minimal Flask web app demonstrating OIDC authentication with SCID using the **
 
 ## Source
 
-Part of the [SCID project](https://github.com/example/scid/).
+Part of the [SCID project](https://github.com/lhw/scid/).

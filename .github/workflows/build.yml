@@ -2,7 +2,7 @@
 # Build and push all SCID container images to ghcr.io
 # =============================================================================
 # Runs on every push to main and on semver tags (v*).
-# Images are pushed to ghcr.io/example/scid/<name>.
+# Images are pushed to ghcr.com/lhw/scid/<name>.
 #
 # Required secrets (set in Forgejo repository settings → Secrets):
 #   REGISTRY_USERNAME    — registry login (Forgejo username or token name)
@@ -19,7 +19,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/example/scid
+  IMAGE_PREFIX: ghcr.com/lhw/scid
   DOCKER_API_VERSION: "1.41"
 
 jobs:

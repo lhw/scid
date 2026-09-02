@@ -43,7 +43,7 @@ services:
   # SCID Companion Service — RSI verification + helper API
   # ---------------------------------------------------------------------------
   companion:
-    image: ghcr.io/example/scid/companion:latest
+    image: ghcr.com/lhw/scid/companion:latest
     restart: unless-stopped
     environment:
       LISTEN_ADDR: ":8080"
@@ -73,7 +73,7 @@ services:
   # Caddy — reverse proxy with automatic Let's Encrypt TLS
   # ---------------------------------------------------------------------------
   caddy:
-    image: ghcr.io/example/scid/caddy:latest
+    image: ghcr.com/lhw/scid/caddy:latest
     restart: unless-stopped
     ports:
       - "0.0.0.0:80:80"

@@ -46,4 +46,4 @@ A minimal vanilla-JS single-page app demonstrating OIDC authentication with SCID
 
 ## Source
 
-Part of the [SCID project](https://github.com/example/scid/).
+Part of the [SCID project](https://github.com/lhw/scid/).
